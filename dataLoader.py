@@ -5,18 +5,16 @@ from torch_geometric import data, transforms
 
 
 class LinkPredData:
-    def __init__(self, root_dir, name, transform=transforms.ToSparseTensor(), use_year=False, use_small=True, ):
+    def __init__(self, root_dir, name, transform=transforms.ToSparseTensor(), use_year=False, use_subset=True,):
 
         self.root_dir = root_dir
         self.name = name
         self.transform = transform
-        self.use_small = use_small
+        self.subset = use_subset
         self.use_year = use_year
 
-        # TODO  dataset features
-
     def load(self, transform=True, explain=False):
-        if self.use_small:
+        if self.subset:
             if explain:
                 edges = pd.read_csv(self.root_dir + self.name + "_edges_indexed").to_numpy()
             else:
@@ -41,7 +39,7 @@ class LinkPredData:
 
     def get_edge_split(self):
 
-        if self.use_small:
+        if self.subset:
             valid = torch.load(self.root_dir + "mini_graph_valid.pt")
             test = torch.load(self.root_dir + "mini_graph_test.pt")
             train = torch.load(self.root_dir + "mini_graph_train.pt")
@@ -61,7 +59,7 @@ class LinkPredData:
         return split
 
     def get_year(self):
-        if self.use_small:
+        if self.subset:
             year_path = self.root_dir + self.name + "_year"
         else:
             year_path = self.root_dir + "node_year.csv"

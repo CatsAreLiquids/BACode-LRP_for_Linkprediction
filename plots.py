@@ -4,6 +4,7 @@ import igraph
 import utils
 import numpy
 
+
 def layers_sum(walks, gnn, r_src, r_tar, tar, x, edge_index, pred):
     arr = np.zeros((5, 1))
     arr[0] = pred.detach().sum()
@@ -29,9 +30,8 @@ def layers_sum(walks, gnn, r_src, r_tar, tar, x, edge_index, pred):
         res = gnn.lrp(x, edge_index, walk, r_src, r_tar, tar)
         arr[4] += res[3].numpy()
 
-    width = 0.35
     fig, ax = plt.subplots()
-    ax.bar([0, 1, 2, 3, 4], arr.flatten().T, 0.35, color="mediumslateblue")
+    ax.bar([0, 1, 2, 3, 4], arr.flatten().T, width=0.35, color="mediumslateblue")
     ax.set_xticks([0, 1, 2, 3, 4],
                   labels=["f(x)", r"$\sum R_J$", r"$\sum R_{JK}$", r"$\sum R_{JKL}$", r"$\sum R_{JKLM}$"])
     ax.set_yticks([0.0, 0.75, 1.50])
@@ -44,7 +44,6 @@ def layers_sum(walks, gnn, r_src, r_tar, tar, x, edge_index, pred):
 
 
 def plot_abs(relevances, samples):
-
     x_pos = np.arange(len(relevances))
     width = 0.35
     print(relevances)
@@ -71,6 +70,7 @@ def baseline_lrp(R, sample):
             c = 'b'
         else:
             c = 'r'
+        ax.bar(ind[i], relevances[i], width, color=c)
     ax.axhline(0, color='grey', linewidth=0.8)
     ax.set_ylabel('Relevance')
     ax.set_title('Relevance per vector')
@@ -78,7 +78,6 @@ def baseline_lrp(R, sample):
 
     plt.savefig("plots/barplot_" + str(sample) + ".png")
     plt.show()
-
 
 
 def plot_curves(epochs, curves, labels, title, file_name="errors.pdf", combined=True):
@@ -112,7 +111,6 @@ def plot_curves(epochs, curves, labels, title, file_name="errors.pdf", combined=
 
 def accuracy(pos_preds, neg_preds):
     tresholds = [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99]
-    labels = ['0.2', '0.3', '0.4', '0.5', '0.6', '0.7', '0.8', '0.9', '0.95', '0.99']
     pos = np.zeros((2, len(tresholds)))  # [true positiveves,false negatives]
     neg = np.zeros((2, len(tresholds)))  # [true negatives,false positives]
     n = 0
@@ -133,7 +131,6 @@ def accuracy(pos_preds, neg_preds):
     acc = (sens + spec) / 2
     fig, ax = plt.subplots()
     plt.plot(tresholds, acc, 'o-', color="mediumslateblue")
-    # plt.axhline(y=426, linewidth=1, color='r')
 
     ax.set_ylabel('Accuracy')
     ax.set_xlabel('Treshold for positive classification')
@@ -143,7 +140,6 @@ def accuracy(pos_preds, neg_preds):
     ax.set_ylim([0, 1])
     plt.savefig("plots/gnn_accuracy.svg")
     plt.show()
-
 
 
 def plot_explain(relevances, src, tar, walks, pos, gamma, data):
@@ -384,8 +380,8 @@ def sumlrp():
     x = np.arange(len(labels))
     fig, ax = plt.subplots()
     width = 0.35
-    rects1 = ax.bar(x - width / 2, arr0, 0.35, label=r"$\epsilon=0.0$", color="mediumslateblue")
-    rects2 = ax.bar(x + width / 2, arr02, 0.35, label=r"$\epsilon=0.2$", color="plum")
+    ax.bar(x - width / 2, arr0, 0.35, label=r"$\epsilon=0.0$", color="mediumslateblue")
+    ax.bar(x + width / 2, arr02, 0.35, label=r"$\epsilon=0.2$", color="plum")
 
     # Add some text for labels, title and custom x-axis tick labels, etc.
     ax.set_ylabel(r"$\sum f(x)$")
@@ -407,5 +403,3 @@ def sumlrp():
 
     plt.savefig("plots/lrp_sum_0_act.svg")
     plt.show()
-
-

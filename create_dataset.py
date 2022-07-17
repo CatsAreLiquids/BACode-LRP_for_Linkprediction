@@ -28,7 +28,7 @@ def random_walk(data, start):
     x = np.around(x, decimals=5)
 
     helper = np.vstack((x, np.arange(0, data.num_nodes))).T
-    print(helper)
+
     helper = np.asarray([helper[i, 1] for i in range(helper.shape[0]) if helper[i, 0] != 0])
     pd.DataFrame(helper).to_csv("data/mini_graph", index=False)
 
@@ -130,6 +130,7 @@ def graph_split(data):
     candidates = np.array([x[0] for x in helper if x[1] >= 2018])
     candidates = [x for x in candidates if np.count_nonzero(adj[:, x]) >= 3]
     train = copy.deepcopy(edges)
+
     # we aim for 99/1/1 split with 252068 Edges that means we want : 2520
     # some how tht is not really true we us 2 * 788 --> 1576 ~ 0,63%
     rng = default_rng()
@@ -158,7 +159,7 @@ def graph_split(data):
     torch.save(test_dict, "data/mini_graph_test.pt")
     torch.save(train_dict, "data/mini_graph_train.pt")
 
-    #train does not include valid or test
+    # train does not include validation or test set
     pd.DataFrame(train).to_csv("data/mini_graph_edges_train", index=False)
 
 
@@ -166,7 +167,7 @@ def graph_statistics(data):
     adj = data.adj_t
     in_deg = adj.sum(dim=0)
     out_deg = adj.sum(dim=1)
-    print(out_deg.sum(),in_deg.sum())
+    print(out_deg.sum(), in_deg.sum())
     deg = in_deg + out_deg
 
     avrg_in = in_deg.sum() / data.num_nodes
@@ -198,7 +199,7 @@ def create_data_baseline(adj, data):
     save = np.zeros([data.shape[0], 256])
 
     for i in range(adj.shape[0]):
-        s1,s2 = set(),set()
+        s1, s2 = set(), set()
         s1.update(np.where(adj[i])[0])
 
         for node in s1:
@@ -208,141 +209,27 @@ def create_data_baseline(adj, data):
         save[i, 128:256] = data[list(s2)].sum(axis=0)
         save[i, 0:128] = data[list(s1)].sum(axis=0)
     print("finished")
-    #pd.DataFrame(save).to_csv("data/baseline_NN", index=False)
+    # pd.DataFrame(save).to_csv("data/baseline_NN", index=False)
 
 
-def samples(data,split):
-
-    src,tar = split["test"]["source_node"],split["test"]["target_node"]
-    print(src.shape[0])
-    index = np.arange(src.shape[0])
-    res =  np.vstack((index,np.zeros(src.shape[0])))
-    print(res.shape)
-    adj = data.adj_t.to_dense()
-
-    for i in range(src.shape[0]):
-        s1, s2 = set(), set()
-        s1.update(np.where(adj[src[i]])[0])
-        s1.update(np.where(adj[:,tar[i]])[0])
-        for node in s1:
-            s2.update(np.where(adj[node])[0])
-        s2.update(s1)
-        s2.discard(src[i])
-        s2.discard(tar[i])
-        res[1, i] = len(s2)
-    res = res[:, res[1, :].argsort()].T
-    res = pd.DataFrame(res,columns=["zero","one"])
-    res.to_csv("data/samples", index=False)
-    res = res.drop(np.where(res["one"] <= 2)[0]).reset_index()
-    res = res.drop(np.where(res["one"] > 200)[0])
-
-    res.to_csv("data/samples_smoll", index=False)
-
-
-def validation_lrp(x,adj_t,split,adj,gnn,nn,activation=True,pruning=False):
-    #Lets find and remove 5 nodes each for pruning and adding based on samples in validation
-    val_src, val_tar = split["source_node"], split["target_node"]
-
-    walks_all = utils.walks(adj)
-    samples = [8, 14, 107, 453]  # [406]
-    df = pd.DataFrame()
-
-    #graph_rep = gnn(data.x, data.adj_t)
-    #model_out = nn(graph_rep[val_src], graph_rep[val_tar])
-
-    if pruning:
-        for i in samples:
-            walks = utils_func.find_walks(val_src[i], val_tar[i], walks_all)
-
-            graph_rep = gnn(data.x, data.adj_t)
-            model_out = nn(graph_rep[val_src], graph_rep[val_tar])
-
-            r_src, r_tar = nn.lrp(graph_rep[val_src[i]], graph_rep[val_tar[i]], model_out[i])
-            r_g = r_src.detach().sum()+r_tar.detach().sum()
-            l = []
-            nodes = set([node for walk in walks for node in walk])
-            print(nodes)
-            for walk in walks:
-                r = gnn.lrp(data.x, data.adj_t, walk, r_src, r_tar, val_tar[i])
-                l.append(tuple((np.abs(r_g-r[2].detach().sum()),walk)))
-            l.sort(key=lambda x: x[0])
-            name = "pruning"+str(i)
-            l = [x[1] for x in l[-6:-1]]
-            df[name]=l
-
-    if activation:
-        for i in samples:
-            walks = utils_func.find_walks(val_src[i], val_tar[i], walks_all)
-
-            graph_rep = gnn(x, adj_t)
-            model_out = nn(graph_rep[val_src], graph_rep[val_tar])
-            res = [None]*5
-            print(val_src[i].dtype,val_tar[i],model_out[i])
-            while walks:
-                r = []
-                ref = 0
-                tmp  = None
-                r_src, r_tar = nn.lrp(val_src[i],val_tar[i],model_out[i])
-                nodes = set(np.array(walks).flatten())
-                for walk in walks:
-                    r.append(gnn.lrp(x,adj_t,walk,r_src,r_tar,val_tar[i]))
-                for node in nodes:
-                    index = np.array([i for i in range(len(walks)) if node in walks[i]])
-                    if r[index].sum() > ref:
-                        tmp= node
-
-                res.append(tmp)
-
-                if res[-1] != None:
-                    break
-            name = "activation"+str(i)
-            df[name]=res
-            print(df)
-        pass
-
-    if activation and pruning:
-        df.to_csv("data/validation_lrp",index=False)
-    elif activation:
-        df = pd.read_csv("data/validation_lrp").to_numpy()
-        print(df)
-    else :
-        df.to_csv("data/validation_lrp_activation",index=False)
-        print(df)
 def main():
     """
     Setup to compute random walk and generate Dataset from it
-    """
-    """
-    # loading the data
-    dataset = dataLoader.LinkPredData("data/", use_small=False)
-    data = dataset.load(transform=True)
-    year = dataset.get_year()
-    start = 1454242  # Any start node for the random walk, in this case the most citing paper
-    random_walk(data, start)
+        dataset = dataLoader.LinkPredData("data/", use_small=False)
+        data = dataset.load(transform=True)
+        year = dataset.get_year()
+        start = 1454242  # Any start node for the random walk, in this case the most citing paper
+        random_walk(data, start)
 
-    data = dataset.load(transform=False) # need the edge index
-    get_graph(data,year)
-    reindexing()
+        data = dataset.load(transform=False) # need the edge index
+        get_graph(data,year)
+        reindexing()
+
     """
-    #dataset = dataLoader.LinkPredData("data/", "big_graph", use_small=False)
-    #data = dataset.load(transform=True, explain=False)
-    #graph_statistics(data)
-    #print(np.std(data.x),np.std(data.x).sum())
-    dataset = dataLoader.LinkPredData("data/", "mini_graph", use_small=True)
+    dataset = dataLoader.LinkPredData("data/", "big_graph", use_subset=False)
     data = dataset.load(transform=True, explain=False)
-    #graph_statistics(data)
-    split = dataset.get_edge_split()
-    train_set, valid_set, test_set = split["train"], split["valid"], split["test"]
-    print(train_set["source_node"].shape,valid_set["source_node"].shape)
+    graph_statistics(data)
 
-    #edgeindex = data.edge_index
-    #data = dataset.load(transform=False, explain=True)
-    #graph_statistics(data)
-    #graph_split(data)
-    #print(test_data)
-    #create_Dataset(data.adj_t.to_symmetric().to_dense(),data.x)
-    #samples(data,dataset.get_edge_split())
-    #split = dataset.get_edge_split()
-    #validation_lrp(data,split["valid"],utils_func.adjMatrix(edgeindex,data.num_nodes),"2100_50_001")
+
 if __name__ == "__main__":
     main()

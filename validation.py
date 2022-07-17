@@ -2,6 +2,8 @@ import torch_sparse
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
+
+
 def validation_multiplot(lrp, lrp0, random):
     lrp = [0.00000000e+00, 4.59353129e-06, 2.91466713e-05, 5.73726495e-04,
            9.40314929e-04, 9.42093134e-04, 4.04592554e-03, 4.26748196e-03,
@@ -18,51 +20,51 @@ def validation_multiplot(lrp, lrp0, random):
            3.31179658e+00, 3.29501324e+00, 3.34098961e+00, 3.38273311e+00,
            3.38273311e+00, 3.52988463e+00, 3.52988463e+00, 3.52988463e+00,
            3.71493343e+00]
-    lrp0 = [0.00000000e+00, 1.49516265e-04, 9.17971134e-05, 1.47046645e-04,
-            1.62011385e-04, 2.92539001e-03, 2.97121406e-03, 3.62429619e-03,
-            4.32173808e-03, 4.92557883e-03, 8.14249913e-03, 8.97434553e-03,
-            6.98064566e-03, 3.08349371e-02, 3.67018998e-02, 5.15305658e-02,
-            5.28175731e-02, 6.26781424e-02, 7.78389454e-02, 8.26169948e-02,
-            1.41275334e-01, 2.47073261e-01, 2.06747580e-01, 3.05172054e-01,
-            5.17747508e-01, 9.29955583e-01, 8.89456162e-01, 1.14971972e+00,
-            1.67169626e+00, 2.18941110e+00, 2.15952445e+00, 2.12453705e+00,
-            2.23720316e+00, 2.35600518e+00, 2.55922729e+00, 2.76563308e+00,
-            2.84202779e+00, 2.83584645e+00, 2.85276131e+00, 3.06125064e+00,
-            3.12550307e+00, 3.12426799e+00, 3.12335785e+00, 3.16257764e+00,
-            3.29089523e+00, 3.31117815e+00, 3.28309800e+00, 3.33117190e+00,
-            3.40195963e+00, 3.30804369e+00, 3.33741399e+00, 3.37528750e+00,
-            3.38273311e+00, 3.52988463e+00, 3.52988463e+00, 3.52988463e+00,
-            3.71493343e+00]
-    lrp0020 = [0.00000000e+00, 9.33806101e-07, 1.96629564e-03, 3.85141571e-03,
-               6.29517833e-03, 6.36565089e-03, 8.38090777e-03, 8.72215430e-03,
-               5.91804981e-03, 6.12596273e-03, 1.22691115e-02, 1.50809805e-02,
-               2.62093107e-02, 3.40228399e-02, 5.76551020e-02, 6.14090800e-02,
-               7.39212374e-02, 7.64810642e-02, 7.93713947e-02, 1.23554766e-01,
-               1.75429887e-01, 1.69426207e-01, 2.33493018e-01, 3.02733705e-01,
-               5.37264469e-01, 8.85838989e-01, 9.18137113e-01, 1.11246551e+00,
-               1.68777846e+00, 2.15216390e+00, 2.10299951e+00, 2.09653309e+00,
-               2.16414435e+00, 2.28190659e+00, 2.47167340e+00, 2.82798670e+00,
-               2.81963197e+00, 2.82471793e+00, 2.84656878e+00, 3.08872996e+00,
-               3.15563705e+00, 3.19892214e+00, 3.21573268e+00, 3.22481480e+00,
-               3.21601512e+00, 3.22550725e+00, 3.18443252e+00, 3.32265261e+00,
-               3.38258840e+00, 3.30804369e+00, 3.33997692e+00, 3.37528750e+00,
-               3.37980940e+00, 3.52988463e+00, 3.52988463e+00, 3.52988463e+00,
-               3.71493343e+00]
+    lrp0 = [0.00000000e+00, 0.00000000e+00, 2.28484472e-08, 8.81155332e-07,
+       2.17556953e-06, 2.88287799e-06, 1.33055647e-03, 2.33261685e-03,
+       2.68577635e-03, 4.35544352e-03, 6.46133920e-03, 6.83547755e-03,
+       8.24209948e-03, 8.90711546e-03, 1.17853890e-02, 1.10560745e-02,
+       1.04054312e-02, 1.18954599e-02, 2.71348059e-02, 3.42950622e-02,
+       3.57212861e-02, 3.40758214e-02, 5.28051674e-02, 8.66717041e-02,
+       2.72929835e-01, 2.64936825e-01, 3.41687304e-01, 4.09377965e-01,
+       7.70606682e-01, 1.09860576e+00, 1.16642028e+00, 1.31890302e+00,
+       1.50487548e+00, 1.50590762e+00, 1.57461595e+00, 1.71844984e+00,
+       1.68835055e+00, 1.93602226e+00, 2.12202092e+00, 2.15725629e+00,
+       2.19951431e+00, 2.20153196e+00, 2.20486157e+00, 2.22360218e+00,
+       2.24331071e+00, 2.28478607e+00, 2.26521442e+00, 2.26504130e+00,
+       2.26120529e+00, 2.27826127e+00, 2.33760879e+00, 2.57732238e+00,
+       2.55131961e+00, 2.67959940e+00, 2.67959940e+00, 2.71305674e+00,
+       3.02231949e+00]
+    lrp0020 = [0.00000000e+00, 1.66098277e-06, 1.15275383e-05, 1.15593274e-05,
+       1.15831693e-05, 2.81373660e-05, 2.90358067e-04, 3.42444579e-04,
+       6.41874472e-04, 7.20372796e-04, 1.10149384e-03, 1.45876805e-03,
+       3.24105124e-03, 5.28334379e-03, 5.06280164e-03, 5.90034624e-03,
+       5.71207404e-03, 7.18891422e-03, 8.87165566e-03, 1.95636084e-02,
+       2.53560503e-02, 2.91229089e-02, 4.66845602e-02, 8.57713759e-02,
+       1.41926640e-01, 2.99140905e-01, 3.42331955e-01, 5.26791510e-01,
+       7.72471214e-01, 1.04170870e+00, 1.13159739e+00, 1.25559815e+00,
+       1.46605361e+00, 1.48560359e+00, 1.57980615e+00, 1.69259920e+00,
+       1.68728703e+00, 1.93502907e+00, 2.12140170e+00, 2.15640366e+00,
+       2.19912067e+00, 2.20030008e+00, 2.20424797e+00, 2.20428283e+00,
+       2.21025795e+00, 2.24360562e+00, 2.27898036e+00, 2.26617816e+00,
+       2.27009724e+00, 2.28849077e+00, 2.33815159e+00, 2.58260981e+00,
+       2.55131961e+00, 2.67959940e+00, 2.67959940e+00, 2.71305674e+00,
+       3.02231949e+00]
     lrp020 = [[0.00000000e+00, 7.94728597e-09, 1.69575214e-05, 1.74661477e-05,
-       1.75893307e-05, 1.78794066e-05, 1.85231368e-05, 2.43804852e-04,
-       3.48232190e-04, 4.02221084e-04, 5.88217378e-04, 8.07562470e-04,
-       2.66496638e-03, 3.98999254e-03, 5.36755125e-03, 9.87910032e-03,
-       9.20565526e-03, 1.30861481e-02, 1.96605921e-02, 1.43587987e-02,
-       1.81397796e-02, 3.05853287e-02, 9.36439703e-02, 1.86341483e-01,
-       3.00981305e-01, 3.08432075e-01, 3.55406302e-01, 4.46333401e-01,
-       7.34741430e-01, 1.11070160e+00, 1.17578542e+00, 1.33192750e+00,
-       1.50696021e+00, 1.51780047e+00, 1.68379651e+00, 1.82726607e+00,
-       1.87820880e+00, 2.02588559e+00, 2.19247648e+00, 2.15916345e+00,
-       2.20187135e+00, 2.20240492e+00, 2.20369655e+00, 2.23412278e+00,
-       2.23543162e+00, 2.21765944e+00, 2.21638582e+00, 2.27892446e+00,
-       2.26310838e+00, 2.31395338e+00, 2.39933969e+00, 2.65927286e+00,
-       2.66856966e+00, 2.67959940e+00, 2.67959940e+00, 2.71305674e+00,
-       3.02231949e+00]]
+               1.75893307e-05, 1.78794066e-05, 1.85231368e-05, 2.43804852e-04,
+               3.48232190e-04, 4.02221084e-04, 5.88217378e-04, 8.07562470e-04,
+               2.66496638e-03, 3.98999254e-03, 5.36755125e-03, 9.87910032e-03,
+               9.20565526e-03, 1.30861481e-02, 1.96605921e-02, 1.43587987e-02,
+               1.81397796e-02, 3.05853287e-02, 9.36439703e-02, 1.86341483e-01,
+               3.00981305e-01, 3.08432075e-01, 3.55406302e-01, 4.46333401e-01,
+               7.34741430e-01, 1.11070160e+00, 1.17578542e+00, 1.33192750e+00,
+               1.50696021e+00, 1.51780047e+00, 1.68379651e+00, 1.82726607e+00,
+               1.87820880e+00, 2.02588559e+00, 2.19247648e+00, 2.15916345e+00,
+               2.20187135e+00, 2.20240492e+00, 2.20369655e+00, 2.23412278e+00,
+               2.23543162e+00, 2.21765944e+00, 2.21638582e+00, 2.27892446e+00,
+               2.26310838e+00, 2.31395338e+00, 2.39933969e+00, 2.65927286e+00,
+               2.66856966e+00, 2.67959940e+00, 2.67959940e+00, 2.71305674e+00,
+               3.02231949e+00]]
     lrp050 = [0.00000000e+00, 2.19154358e-04, 2.34679381e-04, 6.29216433e-04,
               7.03173876e-04, 1.11766259e-03, 5.08827567e-03, 5.54429690e-03,
               8.08652639e-03, 7.64008363e-03, 8.90481273e-03, 1.34013355e-02,
@@ -154,42 +156,42 @@ def validation_multiplot(lrp, lrp0, random):
               3.37980940e+00, 3.52988463e+00, 3.52988463e+00, 3.55195441e+00,
               3.71493343e+00]
 
-
     random = [0.00000000e+00, 3.17891439e-07, 2.87729104e-03, 3.02552780e-03,
-       3.19939852e-03, 5.52850962e-03, 1.83382054e-02, 1.93553547e-02,
-       1.95349077e-02, 1.96838280e-02, 2.30122487e-02, 2.29943474e-02,
-       3.43068769e-02, 5.16654025e-02, 5.24370939e-02, 5.04693220e-02,
-       1.66488833e-01, 1.68820754e-01, 1.70465711e-01, 1.83869317e-01,
-       1.97729564e-01, 2.43202978e-01, 2.60927276e-01, 3.10736990e-01,
-       4.83839941e-01, 4.62710776e-01, 5.22312615e-01, 5.23060256e-01,
-       8.57866615e-01, 1.24836267e+00, 1.51795260e+00, 1.60991675e+00,
-       1.62556786e+00, 1.70989207e+00, 1.90854094e+00, 2.01148159e+00,
-       2.08716923e+00, 2.16068107e+00, 2.16122442e+00, 2.20707686e+00,
-       2.25016650e+00, 2.25013613e+00, 2.24608182e+00, 2.26458458e+00,
-       2.28326272e+00, 2.28305771e+00, 2.29048947e+00, 2.38350404e+00,
-       2.36266457e+00, 2.43699016e+00, 2.43605949e+00, 2.55495957e+00,
-       2.73239944e+00, 2.87238565e+00, 2.96974197e+00, 2.96974031e+00,
-       3.02231949e+00]
-    random = ((np.asarray(random) * 30)/20).tolist()
+              3.19939852e-03, 5.52850962e-03, 1.83382054e-02, 1.93553547e-02,
+              1.95349077e-02, 1.96838280e-02, 2.30122487e-02, 2.29943474e-02,
+              3.43068769e-02, 5.16654025e-02, 5.24370939e-02, 5.04693220e-02,
+              1.66488833e-01, 1.68820754e-01, 1.70465711e-01, 1.83869317e-01,
+              1.97729564e-01, 2.43202978e-01, 2.60927276e-01, 3.10736990e-01,
+              4.83839941e-01, 4.62710776e-01, 5.22312615e-01, 5.23060256e-01,
+              8.57866615e-01, 1.24836267e+00, 1.51795260e+00, 1.60991675e+00,
+              1.62556786e+00, 1.70989207e+00, 1.90854094e+00, 2.01148159e+00,
+              2.08716923e+00, 2.16068107e+00, 2.16122442e+00, 2.20707686e+00,
+              2.25016650e+00, 2.25013613e+00, 2.24608182e+00, 2.26458458e+00,
+              2.28326272e+00, 2.28305771e+00, 2.29048947e+00, 2.38350404e+00,
+              2.36266457e+00, 2.43699016e+00, 2.43605949e+00, 2.55495957e+00,
+              2.73239944e+00, 2.87238565e+00, 2.96974197e+00, 2.96974031e+00,
+              3.02231949e+00]
+    random = ((np.asarray(random) * 30) / 20).tolist()
     print(random)
     fig, axs = plt.subplots()
     l = len(lrp)
-    plt.plot(np.arange(0,l, 1),lrp0020,color="plum",linestyle="--",
+    plt.plot(np.arange(0, l, 1), lrp0020, color="plum", linestyle="--",
              label=r"$\gamma = 0.002, \epsilon= 0.0$")
     plt.plot(np.arange(0, l, 1), lrp, color="mediumslateblue", linestyle="-.",
              label=r"$\gamma = 0.5, \epsilon= 0.2$")
-    plt.plot(np.arange(0,l, 1),lrp1000,color="palevioletred",linestyle="--",
+    plt.plot(np.arange(0, l, 1), lrp1000, color="palevioletred", linestyle="--",
              label=r"$\gamma = 100, \epsilon= 0.0$")
-    plt.plot(np.arange(0,l, 1),lrp10002,color="mediumseagreen",linestyle=":",
+    plt.plot(np.arange(0, l, 1), lrp10002, color="mediumseagreen", linestyle=":",
              label=r"$\gamma = 100, \epsilon= 0.2$")
     # plt.plot(np.arange(0,l, 1),lrp1000,color="cadetblue",linestyle="-.",
     #         label=r"$\gamma = 100, \epsilon= 0.0$")
-    plt.plot(np.arange(0,l, 1),random,color="thistle",linestyle=":",
+    plt.plot(np.arange(0, l, 1), random, color="thistle", linestyle=":",
              label="random relevances")
 
     tick_max = 5 * round(float(l) / 5)
     ticks = np.arange(0, tick_max + 1, 5)
     axs.set_xticks(ticks, labels=ticks)
+
     plt.tight_layout()
     axs.spines['top'].set_visible(False)
     axs.spines['right'].set_visible(False)
@@ -199,36 +201,37 @@ def validation_multiplot(lrp, lrp0, random):
 
 
 def validation_avg_plot(relevances: list, l):
-    avg = np.zeros((1,l))
-    for i in relevances :
-        tmp = np.zeros((1,l))
-        tmp[0,0:i[1]] = i[0]
-        tmp[0,i[1]:] = i[0][-1]
+    avg = np.zeros((1, l))
+    for i in relevances:
+        tmp = np.zeros((1, l))
+        tmp[0, 0:i[1]] = i[0]
+        tmp[0, i[1]:] = i[0][-1]
         avg += tmp
 
-    avg = avg/len(relevances)
+    avg = avg / len(relevances)
     print("value: ", avg.sum())
     fig, axs = plt.subplots()
-    axs.fill_between(np.arange(0, l, 1), avg.flatten(),color="mediumslateblue")
+    axs.fill_between(np.arange(0, l, 1), avg.flatten(), color="mediumslateblue")
     tick_max = 5 * round(float(l) / 5)
 
-    ticks = np.arange(0,tick_max+1, 5)
+    ticks = np.arange(0, tick_max + 1, 5)
     axs.set_xticks(ticks, labels=ticks)
     plt.tight_layout()
     axs.spines['top'].set_visible(False)
     axs.spines['right'].set_visible(False)
 
-    #plt.savefig("plots/validation_pru_new_avg")
+    # plt.savefig("plots/validation_pru_new_avg")
     plt.show()
     return avg.flatten()
+
 
 def validation_plot(relevances: list, node, l):
     relevances = np.asarray(relevances).flatten()
 
     fig, axs = plt.subplots()
-    axs.fill_between(np.arange(0, l, 1), relevances,color="mediumslateblue")
+    axs.fill_between(np.arange(0, l, 1), relevances, color="mediumslateblue")
     tick_max = 5 * round(float(l) / 5)
-    ticks = np.arange(0,tick_max+1, 5)
+    ticks = np.arange(0, tick_max + 1, 5)
     axs.set_xticks(ticks, labels=ticks)
 
     plt.tight_layout()
@@ -248,7 +251,6 @@ def restore_edges(adj, nodes, new_node, adj_new):
         adj_new[node, new_node] = adj[node, new_node]
         adj_new[new_node, node] = adj[new_node, node]
 
-
     adj_new = torch_sparse.SparseTensor.from_dense(adj_new)
     return adj_new
 
@@ -260,11 +262,11 @@ def remove_edges(adj_new, nodes, new_node):
         adj_new[node, new_node] = 0
         adj_new[new_node, node] = 0
 
-
     adj_new = torch_sparse.SparseTensor.from_dense(adj_new)
     return adj_new
 
-def clear_edges(adj,walks):
+
+def clear_edges(adj, walks):
     adj_tmp = adj.to_dense()
     nodes = list(set(np.asarray(walks).flatten()))
     for node in nodes:
@@ -278,25 +280,20 @@ def clear_edges(adj,walks):
 
 def validation_list(walks: list, relevance: list, pruning: bool, activation_bool: bool):
     nodes = list(set(np.asarray(walks).flatten()))
-#    print(relevance)
+
     if activation_bool:
         R_g = 0
         activation = []
         for i in range(len(nodes)):
             R_max, old = (0, 0), -np.infty
             for node in nodes:
-                #print(node,R_max,len(nodes))
                 s = np.asarray([relevance[x].sum() for x in range(len(walks)) if node in walks[x]])
-                #print(s.sum() + R_g)
                 if (s.sum() + R_g) > old:
                     R_max = (node, s.sum())
                     old = s.sum() + R_g
-                    #print("new old",old)
-            #print("to remove", R_max[0])
             nodes.remove(R_max[0])
             activation.append(R_max[0])
             R_g += R_max[1]
-            #print("------------------------------")
         return activation
 
     elif pruning:
@@ -315,18 +312,20 @@ def validation_list(walks: list, relevance: list, pruning: bool, activation_bool
 
     return res_pruning
 
-def validation_random(walks,out):
-    print(len(walks))
-    l = len(walks)
-    print(l)
-    rand = np.random.uniform(-out,out,[l])
-    s = rand.sum()
-    return  (rand/s) * out.numpy() #*np.pi
 
-def validation_results(gnn, mlp, x,adj,walks,relevances,src,tar, pruning=False,activaton= False):
-    node_list = validation_list(walks,relevances,pruning=pruning,activation_bool=activaton)
-    if pruning: adj_tmp = adj
-    else : adj_tmp= clear_edges(adj,walks)
+def validation_random(walks, out):
+    l = len(walks)
+    rand = np.random.uniform(-out, out, [l])
+    s = rand.sum()
+    return (rand / s) * out.numpy()
+
+
+def validation_results(gnn, mlp, x, adj, walks, relevances, src, tar, pruning=False, activaton=False,plot=False):
+    node_list = validation_list(walks, relevances, pruning=pruning, activation_bool=activaton)
+    if pruning:
+        adj_tmp = adj
+    else:
+        adj_tmp = clear_edges(adj, walks)
 
     mid = gnn(x, adj_tmp)
     ref = mlp(mid[src], mid[tar]).detach().numpy().sum()
@@ -335,14 +334,16 @@ def validation_results(gnn, mlp, x,adj,walks,relevances,src,tar, pruning=False,a
     for node in node_list:
         graph.append(node)
         if pruning:
-            adj_tmp= remove_edges(adj_tmp,graph,node)
+            adj_tmp = remove_edges(adj_tmp, graph, node)
         else:
             adj_tmp = restore_edges(adj, graph, node, adj_tmp)
         mid = gnn(x, adj_tmp)
         out = mlp(mid[src], mid[tar]).detach().numpy()
 
-        if pruning: predictions.append(np.abs(ref-out.sum()))
-        else: predictions.append(out.sum()-ref)
+        if pruning:
+            predictions.append(np.abs(ref - out.sum()))
+        else:
+            predictions.append(out.sum() - ref)
 
-    #validation_plot(predictions,src,len(node_list))
+    if plot : validation_plot(predictions,src,len(node_list))
     return (predictions, len(node_list))

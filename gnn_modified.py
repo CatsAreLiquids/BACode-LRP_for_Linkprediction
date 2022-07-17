@@ -191,7 +191,7 @@ def main():
 
     # Pre-compute GCN normalization.
     #TODO not the most efficient way
-    deg = utils_func.degMatrix(adj_t)
+
     deg = adj_t.sum(axis=1).to(torch.float)
 
     deg_inv_sqrt = deg ** (-0.5)

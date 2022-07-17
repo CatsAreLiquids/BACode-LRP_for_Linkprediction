@@ -205,8 +205,6 @@ def train(optimizer, train_set, rep, data, mlp, batchsize):
 
         total_loss.append(loss)
         num_sample += batchsize
-    print(pos_loss, neg_loss)
-    print(sum(total_loss) / num_sample)
 
     return sum(total_loss) / num_sample
 
@@ -245,7 +243,7 @@ def test(evaluator, data_set, mlp, rep, data, batchsize, accuracy=True):
 
 
 def runNN(epochs, load, save, batchsize=None, runs=1, plot=True, explain=False):
-    dataset = dataLoader.LinkPredData("data/", "mini_graph", use_small=True)
+    dataset = dataLoader.LinkPredData("data/", "mini_graph", use_subset=True)
     split = dataset.get_edge_split()
     train_set, valid_set, test_set = split["train"], split["valid"], split["test"]
 
@@ -311,7 +309,7 @@ def runNN(epochs, load, save, batchsize=None, runs=1, plot=True, explain=False):
 def main():
     # run all baseline and return results
     runNN(epochs=1, load=True, save=False, batchsize=None, runs=1, plot=True)
-    dataset = dataLoader.LinkPredData("data/", "mini_graph", use_small=True)
+    dataset = dataLoader.LinkPredData("data/", "mini_graph", use_subset=True)
     data = dataset.load()
     split = dataset.get_edge_split()
     train_set, valid_set, test_set = split["train"], split["valid"], split["test"]

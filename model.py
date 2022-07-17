@@ -230,7 +230,7 @@ def explains(test_set, gnn, mlp, adj, x,edge_index,do_validation=False):
     y = copy.deepcopy(x)
     z = copy.deepcopy(x)
     #gammas = [0.2,0.5,1,20]
-    gammas = [0.02]#,0.0,0.5,100]
+    gammas = [0.5]#,0.0,0.5,100]
 
     random = False
     val_mul =[]
@@ -317,7 +317,7 @@ def main(batchsize=None, epochs=1, explain=True, save=False, load=True, runs=1, 
     np.random.default_rng()
 
     # loading the data
-    dataset = dataLoader.LinkPredData("data/", "mini_graph", use_small=True)
+    dataset = dataLoader.LinkPredData("data/", "mini_graph", use_subset=True)
 
     data = dataset.load()
     split = dataset.get_edge_split()

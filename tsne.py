@@ -6,7 +6,7 @@ import dataLoader
 from openTSNE import TSNE
 
 import matplotlib.pyplot as plt
-dataset = dataLoader.LinkPredData("data/", "big_graph", use_small=False)
+dataset = dataLoader.LinkPredData("data/", "big_graph", use_subset=False)
 data = dataset.load(transform=True)
 
 """
