@@ -83,8 +83,8 @@ def walks(A, src, tar):
 
 def self_loops(rx, ry):
     loops = []
-    scale_x = 0.1 * numpy.cos(numpy.linspace(0, 2 * numpy.pi, 50))
-    scale_y = 0.1 * numpy.sin(numpy.linspace(0, 2 * numpy.pi, 50))
+    scale_x = 0.1 * np.cos(np.linspace(0, 2 * np.pi, 50))
+    scale_y = 0.1 * np.sin(np.linspace(0, 2 * np.pi, 50))
     if (rx[0] == rx[1] and ry[0] == ry[1]) and (rx[2] == rx[3] and ry[2] == ry[3]):
         rx = rx[0] + scale_x
         ry = ry[0] + scale_y
@@ -110,3 +110,34 @@ def self_loops(rx, ry):
         loops.append((rx, ry))
 
     return loops
+
+def similarity(walks,relevances,x,target,type):
+
+    relevances = np.asarray(relevances).sum(axis=1)
+
+    nodes = []
+    for i in range(5):
+        if type == "rand":
+            idx = np.random.randint(x.shape[0] - 1)
+            nodes.append(idx)
+        else:
+            if type == "max":
+                idx = relevances.argmax()
+            elif type == "min":
+                idx = relevances.argmin()
+            else:
+                idx = np.random.randint(len(relevances)-1)
+            nodes.append(walks[idx])
+
+            relevances = relevances.tolist()
+            relevances.pop(idx)
+            walks.pop(idx)
+            relevances = np.asarray(relevances).flatten()
+
+    nodes = set(np.asarray(nodes).flatten().tolist())
+    score = 0
+    for i in nodes:
+        score+= 1 - scipy.spatial.distance.cosine(x[target],x[i])
+
+    score /= len(nodes)
+    return score

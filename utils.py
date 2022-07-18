@@ -52,35 +52,3 @@ def layout(A):
     graph.add_edges(zip(*numpy.where(A == 1)))
     return numpy.array(list(graph.layout_kamada_kawai()))
 
-def similarity(walks,relevances,x,target,type):
-
-    relevances = np.asarray(relevances).sum(axis=1)
-
-    nodes = []
-    for i in range(5):
-        if type == "rand":
-            idx = np.random.randint(x.shape[0] - 1)
-            nodes.append(idx)
-        else:
-            if type == "max":
-                idx = relevances.argmax()
-            elif type == "min":
-                idx = relevances.argmin()
-            else:
-                idx = np.random.randint(len(relevances)-1)
-            nodes.append(walks[idx])
-
-            relevances = relevances.tolist()
-            relevances.pop(idx)
-            walks.pop(idx)
-            relevances = np.asarray(relevances).flatten()
-
-    nodes = set(np.asarray(nodes).flatten().tolist())
-    print(nodes)
-    score = 0
-    for i in nodes:
-        score+= 1 - scipy.spatial.distance.cosine(x[target],x[i])
-        print(score)
-
-    score /= len(nodes)
-    return score

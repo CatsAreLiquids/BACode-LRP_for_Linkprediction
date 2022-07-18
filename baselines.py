@@ -223,12 +223,12 @@ def test(evaluator, data_set, mlp, rep, data, batchsize, accuracy=True):
         tar_neg_tmp = tar_neg[idx]
 
         # positive sampling
-        pos_preds += [mlp(helper(rep, data, src_tmp, tar_tmp, train=False)).squeeze().cpu()]
+        pos_preds += [torch.sigmoid(mlp(helper(rep, data, src_tmp, tar_tmp, train=False)).squeeze().cpu())]
 
         # negative sampling
         src_tmp = src_tmp.view(-1, 1).repeat(1, 20).view(-1)
         tar_neg_tmp = tar_neg_tmp.view(-1)
-        neg_preds += [mlp(helper(rep, data, src_tmp, tar_neg_tmp, train=False)).squeeze().cpu()]
+        neg_preds += [torch.sigmoid(mlp(helper(rep, data, src_tmp, tar_neg_tmp, train=False)).squeeze().cpu())]
 
     pos_pred = torch.cat(pos_preds, dim=0)
     neg_pred = torch.cat(neg_preds, dim=0)

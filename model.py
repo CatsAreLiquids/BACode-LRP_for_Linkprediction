@@ -97,12 +97,12 @@ class GNN(torch.nn.Module):
         #print("     GNN out",R[0].sum(),c.sum())
 
         #FOr bar plot layers
-        #return (R[3].sum().detach(),R[2].sum().detach(),R[1].sum().detach(),R[0].sum().detach())
+        return (R[3].sum().detach(),R[2].sum().detach(),R[1].sum().detach(),R[0].sum().detach())
 
         #print("Walk", (x.grad * x.data).sum(), x.grad.sum())
         #print(np.where((x.grad * x.data)))
         #print(R[0].sum(),R[1].sum(),R[2].sum(),walk)
-        return R[0].detach().numpy()
+        #return R[0].detach().numpy()
 
 class NN(torch.nn.Module):
     """
@@ -214,9 +214,8 @@ def train(batchsize, train_set, x, adj, optimizer, gnn, nn):
     return sum(total_loss) / num_sample
 
 
-def explains(test_set, gnn, mlp, adj, x,edge_index,do_validation=False):
+def explains(test_set, gnn, mlp, adj, x,edge_index,validation=False,prunning=True,masking = False,similarity=False,plot=True,relevance=False):
     src, tar = test_set["source_node"], test_set["target_node"]
-    #walks_all = utils.walks(adj)
     # forward passes
     mid = gnn(x, edge_index)  # features, edgeindex
     pos_pred = mlp(mid[src], mid[tar])
@@ -225,57 +224,45 @@ def explains(test_set, gnn, mlp, adj, x,edge_index,do_validation=False):
                380,347,336,320,307,305,270,255,227,216,
                53,47,5,188,105,12,34,56,66,70]
     #samples = [53, 47, 5, 188, 105]
-    #samples = [5]
+    samples = [5]
     abs_R = 0
-    y = copy.deepcopy(x)
-    z = copy.deepcopy(x)
-    #gammas = [0.2,0.5,1,20]
-    gammas = [0.5]#,0.0,0.5,100]
+    gammas = [0.0]
 
     random = False
     val_mul =[]
     score = 0
+    e = 0.0
     for gamma in gammas:
-        e = 0.0
-        val = []
-        """
-        if len(val_mul) >= 0:
-            random = False
-            if len(val_mul) == 2:
-                e = 0.2
-        """
+        if validation : val = []
         for i in samples :
-            #print(e,gamma)
-            walks = utils_func.walks(adj,src[i], tar[i])
-
-
-            r_src, r_tar = mlp.lrp(mid[src[i]], mid[tar[i]], pos_pred[i],gamma=gamma,epsilon=e)
             p = []
-            m=0
-            #plots.plt_sum(walks,gnn,r_src,r_tar,tar[i],x, edge_index,pos_pred[i])
+            walks = utils_func.walks(adj,src[i], tar[i])
+            r_src, r_tar = mlp.lrp(mid[src[i]], mid[tar[i]], pos_pred[i],gamma=gamma,epsilon=e)
+
+            if relevances : plots.layers_sum(walks,gnn,r_src,r_tar,tar[i],x, edge_index,pos_pred[i])
             for walk in walks:
-                p.append(gnn.lrp(y, edge_index, walk, r_src, r_tar, tar[i],gamma=gamma,epsilon=e))
-                #m += utils_func.masking(gnn,mlp,z,src[i],tar[i],edge_index,adj,walk,gamma=gamma)
+                if prunning :
+                    p.append(gnn.lrp(x, edge_index, walk, r_src, r_tar, tar[i],gamma=gamma,epsilon=e)[-1])
 
-            if do_validation:
-                if random == True:
+                if masking:
+                    utils_func.masking(gnn,mlp,z,src[i],tar[i],edge_index,adj,walk,gamma=gamma)
+
+            if validation:
+                if random:
                     p = validation.validation_random(walks,(r_src.detach().sum()+r_tar.detach().sum()))
-                val.append(validation.validation_results(gnn, mlp, x, edge_index, walks, p, src[i], tar[i],pruning=True, activaton=False))
-            #score += utils.similarity(walks,p,x,tar[i],"max")
-            #utils_func.validation(walks,p,src[i],pruning=True,activation=False,plot=True)
-            #walks.append([src[i].numpy(), src[i].numpy(), src[i].numpy(), tar[i].numpy()])
+                val.append(validation.validation_results(gnn, mlp, x, edge_index, walks, p, src[i], tar[i],
+                            pruning=True, activaton=False))
+            if similarity : score += util_func.similarity(walks,p,x,tar[i],"max")
 
-            #a, pr = utils_func.validation(walks,p,src[i],pruning=True,activation=False,plot=True)
-            #abs_R+= plots.plot_explain(p, src[i], tar[i], walks, "pos",gamma,x)
+            if plot:
+                walks.append([src[i].numpy(), src[i].numpy(), src[i].numpy(), tar[i].numpy()])
+                plots.plot_explain(p, src[i], tar[i], walks, "pos",gamma,x)
         val_mul.append(validation.validation_avg_plot(val, 57))
-    print(gamma, e, val_mul)
-    #validation.validation_multiplot(val_mul[0],val_mul[1],val_mul[2])
+    validation.validation_multiplot(val_mul[0],val_mul[1],val_mul[2])
 
-            #utils_func.plt_sum(p,pos_pred[i])
-        #utils_func.plot_abs(abs_R,samples)
-    #print(abs_R,abs_R/len(src))
-    score /= len(samples)
-    print(score)
+    if similarity :
+        score /= len(samples)
+        print("similarity score is:", score)
 @torch.no_grad()
 def test(batchsize, data_set, x, adj, evaluator, gnn, nn,accuracy=False):
     tmp = data_set["source_node"].shape[0]
@@ -291,12 +278,12 @@ def test(batchsize, data_set, x, adj, evaluator, gnn, nn,accuracy=False):
         tar_neg_tmp = tar_neg[idx]
 
         # positive sampling
-        pos_preds += [nn(graph_rep[src_tmp], graph_rep[tar_tmp]).squeeze().cpu()]
+        pos_preds += [torch.sigmoid(nn(graph_rep[src_tmp], graph_rep[tar_tmp]).squeeze().cpu())]
 
         # negative sampling
         src_tmp = src_tmp.view(-1, 1).repeat(1, 20).view(-1)
         tar_neg_tmp = tar_neg_tmp.view(-1)
-        neg_preds += [nn(graph_rep[src_tmp], graph_rep[tar_neg_tmp]).squeeze().cpu()]
+        neg_preds += [torch.sigmoid(nn(graph_rep[src_tmp], graph_rep[tar_neg_tmp]).squeeze().cpu())]
 
     pos_pred = torch.cat(pos_preds, dim=0)
     neg_pred = torch.cat(neg_preds, dim=0)
@@ -402,7 +389,7 @@ def main(batchsize=None, epochs=1, explain=True, save=False, load=True, runs=1, 
                     #plots.sumlrp()
                     #validation(valid_set, gnn, nn, exp_adj, explain_data.x,explain_data.edge_index)
                     #utils_func.grid_e_g(valid_set, gnn, nn, exp_adj, explain_data.x,explain_data.edge_index)
-                    explains(valid_set, gnn, nn, exp_adj, explain_data.x,data.adj_t,True)
+                    explains(valid_set, gnn, nn, exp_adj, explain_data.x,data.adj_t,False)
 
                     #explains(valid_set, gnn, nn, exp_adj, data.x, data.edge_index)
 
