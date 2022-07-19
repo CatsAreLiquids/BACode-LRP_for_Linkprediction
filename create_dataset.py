@@ -3,14 +3,14 @@ import pandas as pd
 import numpy as np
 import torch
 import torch_sparse
-import dataLoader
-from matplotlib import pyplot as plt
-from collections import Counter
 import copy
 from numpy.random import default_rng
-import utils
-import utils_func
-import model
+from matplotlib import pyplot as plt
+from collections import Counter
+
+import dataLoader
+from utils import utils, utils_func
+
 
 
 def random_walk(data, start):
@@ -215,18 +215,17 @@ def create_data_baseline(adj, data):
 def main():
     """
     Setup to compute random walk and generate Dataset from it
-        dataset = dataLoader.LinkPredData("data/", use_small=False)
-        data = dataset.load(transform=True)
+        dataset = dataLoader.LinkPredData("dataset/ogbl_citation2/raw/", "big_graph", use_subset=False)
+        data = dataset.load(transform=True, explain=False)
         year = dataset.get_year()
         start = 1454242  # Any start node for the random walk, in this case the most citing paper
         random_walk(data, start)
-
         data = dataset.load(transform=False) # need the edge index
         get_graph(data,year)
         reindexing()
-
+        graph_split(data)
     """
-    dataset = dataLoader.LinkPredData("data/", "big_graph", use_subset=False)
+    dataset = dataLoader.LinkPredData("data/", "mini_graph", use_subset=True)
     data = dataset.load(transform=True, explain=False)
     graph_statistics(data)
 
