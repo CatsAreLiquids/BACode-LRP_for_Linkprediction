@@ -1,6 +1,9 @@
 import copy
 import numpy as np
 import torch
+import torch_geometric
+import itertools
+import torch_sparse
 
 
 def adjMatrix(edges, numNodes, selfLoops=True):
@@ -111,8 +114,8 @@ def self_loops(rx, ry):
 
     return loops
 
-def similarity(walks,relevances,x,target,type):
 
+def similarity(walks, relevances, x, target, type):
     relevances = np.asarray(relevances).sum(axis=1)
 
     nodes = []
@@ -126,7 +129,7 @@ def similarity(walks,relevances,x,target,type):
             elif type == "min":
                 idx = relevances.argmin()
             else:
-                idx = np.random.randint(len(relevances)-1)
+                idx = np.random.randint(len(relevances) - 1)
             nodes.append(walks[idx])
 
             relevances = relevances.tolist()
@@ -137,7 +140,53 @@ def similarity(walks,relevances,x,target,type):
     nodes = set(np.asarray(nodes).flatten().tolist())
     score = 0
     for i in nodes:
-        score+= 1 - scipy.spatial.distance.cosine(x[target],x[i])
+        score += 1 - scipy.spatial.distance.cosine(x[target], x[i])
 
     score /= len(nodes)
     return score
+
+
+def get_subgraph(adj, src, tar, hops):
+    edge = torch_geometric.utils.to_edge_index(adj)
+
+    tmp = []
+    subset, edge_index, mapping, edge_mask = torch_geometric.utils.k_hop_subgraph(
+        src, hops, edge[0], relabel_nodes=False, directed=False, flow="target_to_source")
+    tmp += edge_index.T.tolist()
+    subset, edge_index, mapping, edge_mask = torch_geometric.utils.k_hop_subgraph(
+        src, hops, edge[0], relabel_nodes=False, directed=False, flow="source_to_target")
+    tmp += edge_index.T.tolist()
+    subset, edge_index, mapping, edge_mask = torch_geometric.utils.k_hop_subgraph(
+        tar, hops, edge[0], relabel_nodes=False, directed=False, flow="target_to_source")
+    tmp += edge_index.T.tolist()
+    subset, edge_index, mapping, edge_mask = torch_geometric.utils.k_hop_subgraph(
+        tar, hops, edge[0], relabel_nodes=False, directed=False, flow="source_to_target")
+    tmp += edge_index.T.tolist()
+
+    tmp.sort()
+
+    return torch.asarray(list(tmp for tmp, _ in itertools.groupby(tmp))).T
+
+
+def reindex(subgraph, x, edge):
+    n = 0
+    idxs = list(set(subgraph[0].tolist()).union(set(subgraph[1].tolist())))
+    mapping = []
+    for idx in idxs:
+        tmp1 = np.flatnonzero(idx == subgraph[0])
+        tmp2 = np.flatnonzero(idx == subgraph[1])
+        # reindexing
+        subgraph[0, tmp1] = n
+        subgraph[1, tmp2] = n
+        mapping.append(idx)
+
+        n += 1
+
+    return x[mapping], subgraph, (mapping.index(edge[0]), mapping.index(edge[1]))
+
+
+def adj_t(adj):
+    tmp = torch_sparse.SparseTensor.from_dense(adj).set_diag()
+    deg = tmp.sum(dim=0).pow(-0.5)
+    deg[deg == float('inf')] = 0
+    return deg.view(-1, 1) * tmp * deg.view(1, -1)

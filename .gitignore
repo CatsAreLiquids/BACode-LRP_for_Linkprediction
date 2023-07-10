@@ -4,6 +4,9 @@ dataset/
 OGB Code/
 model/
 SEAl Coe/
+sgnn_lrp_via_mp-main/
+rel_walk_gnnlrp-main/
+data/subgraph*
 test.py
 LRP_bridge.py
 venv
@@ -13,3 +16,5 @@ outdated/verification.py
 *.xml
 *.iml
 *.zip
+*.svg
+*.jpeg

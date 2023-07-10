@@ -5,10 +5,13 @@ import torch_sparse
 from ogb.linkproppred import Evaluator
 from torch.nn.functional import relu
 from torch_geometric.nn import GCNConv
-
+import torch_geometric
+import scipy.sparse as ssp
+import pandas as pd
 import dataLoader
-from utils import validation,utils_func
+from utils import validation, utils_func, utils
 from plots import plots
+from GNNexplainer import gnnexplainer, get_top_edges_edge_ig, CAM
 
 
 class GNN(torch.nn.Module):
@@ -18,17 +21,35 @@ class GNN(torch.nn.Module):
 
     def __init__(self):
         # build GNN here
-        super(GNN, self).__init__()
+        # super(GNN, self).__init__()
+        super().__init__()
         self.input = GCNConv(128, 256, bias=False)
         self.hidden = GCNConv(256, 256, bias=False)
         self.output = GCNConv(256, 256, bias=False)
 
-    def forward(self, x, edge_index):
-        h = self.input(x, edge_index)
-        X = relu(h)
-        h = self.hidden(X, edge_index)
-        X = relu(h)
-        h = self.output(X, edge_index)
+    def forward(self, x, edge_index, mask=None):
+        if mask is not None:
+            n = x.shape[0]
+            edge_index_tmp = torch_sparse.SparseTensor.from_dense((edge_index * mask[0]) + torch.eye(n))
+            print("l1: ", edge_index_tmp.requires_grad())
+            h = self.input(x, edge_index_tmp)
+            X = relu(h)
+            n = X.shape[0]
+            edge_index_tmp = torch_sparse.SparseTensor.from_dense((edge_index * mask[1]) + torch.eye(n))
+            print("l2: ", edge_index_tmp.requires_grad())
+            h = self.hidden(X, edge_index_tmp)
+            X = relu(h)
+            n = X.shape[0]
+            edge_index_tmp = torch_sparse.SparseTensor.from_dense((edge_index * mask[2]) + torch.eye(n))
+            print("l3: ", edge_index_tmp.requires_grad())
+            h = self.output(X, edge_index_tmp)
+        else:
+            h = self.input(x, edge_index)
+            X = relu(h)
+            h = self.hidden(X, edge_index)
+            X = relu(h)
+            print(X.device)
+            h = self.output(X, edge_index)
         return h
 
     def lrp(self, x, edge_index, walk, r_src, r_tar, tar, epsilon=0, gamma=0):
@@ -88,18 +109,23 @@ class NN(torch.nn.Module):
 
     def __init__(self):
         # build MLP here
-        super(NN, self).__init__()
+        # super(NN, self).__init__()
+        super().__init__()
         self.input = torch.nn.Linear(256, 256, bias=False)
         self.hidden = torch.nn.Linear(256, 256, bias=False)
         self.output = torch.nn.Linear(256, 1, bias=False)
 
-    def forward(self, src, tar):
-        x = src + tar
+    def forward(self, src, tar, emb=None, classes=False):
+        if emb is not None:
+            x = emb[src] + emb[tar]
+        else:
+            x = src + tar
         h = self.input(x)
         X = relu(h)
         h = self.hidden(X)
         X = relu(h)
         h = self.output(X)
+
         return h
 
     # noinspection PyTypeChecker
@@ -183,22 +209,23 @@ def train(batchsize, train_set, x, adj, optimizer, gnn, nn):
 
 def explains(test_set, gnn, mlp, adj, x, edge_index, validation_plot=False, prunning=True, masking=False,
              similarity=False,
-             plot=True, relevances=True):
+             plot=True, relevances=False):
     src, tar = test_set["source_node"], test_set["target_node"]
     # forward passes
     mid = gnn(x, edge_index)  # features, edgeindex
     pos_pred = mlp(mid[src], mid[tar])
 
-    samples = [53, 47, 5, 188, 105]
-
+    samples = [47]  # , 53, 5, 188, 105]
     random = False
     val_mul = []
     score = 0
     e = 0.0
-    gammas = [0.0, 0.02,0.0,0.02]
+    gammas = [0.02]  # [0.0, 0.02,0.0,0.02]
+    gamma = 0.02
     for gamma in gammas:
         if validation_plot: val = []
         for i in samples:
+            print("test")
             p = []
             walks = utils_func.walks(adj, src[i], tar[i])
             r_src, r_tar = mlp.lrp(mid[src[i]], mid[tar[i]], pos_pred[i], gamma=gamma, epsilon=e)
@@ -216,13 +243,13 @@ def explains(test_set, gnn, mlp, adj, x, edge_index, validation_plot=False, prun
                     p = validation.validation_random(walks, (r_src.detach().sum() + r_tar.detach().sum()))
                 val.append(validation.validation_results(gnn, mlp, x, edge_index, walks, p, src[i], tar[i],
                                                          pruning=True, activaton=False))
-            if similarity: score += util_func.similarity(walks, p, x, tar[i], "max")
+            if similarity: score += utils_func.similarity(walks, p, x, tar[i], "max")
 
             if plot:
                 walks.append([src[i].numpy(), src[i].numpy(), src[i].numpy(), tar[i].numpy()])
                 plots.plot_explain(p, src[i], tar[i], walks, "pos", gamma)
 
-        if gamma == 0.02 : e = 0.2
+        if gamma == 0.02: e = 0.2
 
         if validation_plot and average:
             val_mul.append(validation.validation_avg_plot(val, 57))
@@ -269,7 +296,7 @@ def test(batchsize, data_set, x, adj, evaluator, gnn, nn, accuracy=False):
     })['mrr_list'].mean().item()
 
 
-def main(batchsize=None, epochs=1, explain=True, save=False,train_model=True, load=True, runs=1, plot=False):
+def main(batchsize=1, epochs=1, explain=True, save=False, train_model=False, load=True, runs=1, plot=False):
     # ----------------------- Set up
     # globals
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -277,12 +304,19 @@ def main(batchsize=None, epochs=1, explain=True, save=False,train_model=True, lo
 
     # loading the data
     dataset = dataLoader.LinkPredData("data/", "mini_graph", use_subset=True)
-
     data = dataset.load()
     split = dataset.get_edge_split()
     train_set, valid_set, test_set = split["train"], split["valid"], split["test"]
+    # subgraph loading
+    """
+    x_new = torch.from_numpy(pd.read_csv("data/subgraph_27_58_features_3.csv").to_numpy()).float()
+    subgraph = torch.from_numpy(pd.read_csv("data/subgraph_27_58_edges_3.csv").to_numpy())
+    edge = (27,58) #TODO put into dataset somehow
+    """
 
+    # Preprocessing
     tmp = data.adj_t.set_diag()
+    adj = data.adj_t.set_diag()
     deg = tmp.sum(dim=0).pow(-0.5)
     deg[deg == float('inf')] = 0
     tmp = deg.view(-1, 1) * tmp * deg.view(1, -1)
@@ -293,19 +327,18 @@ def main(batchsize=None, epochs=1, explain=True, save=False,train_model=True, lo
     if load:
         gnn.load_state_dict(torch.load("models/gnn_2100_50_0015"))
         nn.load_state_dict(torch.load("models/nn_2100_50_0015"))
-    gnn.to(device), nn.to(device), data.to(device)
-
+    gnn.to(device), nn.to(device)  # , data.to(device)
     optimizer = torch.optim.Adam(list(gnn.parameters()) + list(nn.parameters()), lr=0.0005)
     evaluator = Evaluator(name='ogbl-citation2')
 
     # adjusting batchsize for full Dataset
     if batchsize is None:
         batchsize = dataset.num_edges
-    if explain:
+    if explain:  # change to explain and False for subgraph loading
         # to plot proper plot the the LRP-method we need all walks:
-        explain_data = dataset.load(transform=False, explain=False)
-        exp_adj = utils_func.adjMatrix(explain_data.edge_index,
-                                       explain_data.num_nodes)  # Transpose of adj Matrix for find walks
+        explain_data = dataset.load(transform=False, explain=explain)
+        exp_adj = torch_geometric.utils.to_dense_adj(explain_data.edge_index).squeeze()
+        utils_func.adjMatrix(explain_data.edge_index, explain_data.num_nodes)  # Transpose of adj Matrix for find walks
 
     # ----------------------- training & testing
     average = np.zeros((runs, 2))
@@ -315,8 +348,8 @@ def main(batchsize=None, epochs=1, explain=True, save=False,train_model=True, lo
         for i in range(0, epochs):
             if train_model:
                 loss[i] = train(batchsize, train_set, data.x, data.adj_t, optimizer, gnn, nn).detach()
-            valid_mrr[i] = test(batchsize, valid_set, data.x, data.adj_t, evaluator, gnn, nn)
-            test_mrr[i] = test(batchsize, test_set, data.x, data.adj_t, evaluator, gnn, nn)
+            # valid_mrr[i] = test(batchsize, valid_set, data.x, data.adj_t, evaluator, gnn, nn)
+            # test_mrr[i] = test(batchsize, test_set, data.x, data.adj_t, evaluator, gnn, nn)
 
             if valid_mrr[i] > best and save:
                 best = valid_mrr[i]
@@ -332,10 +365,34 @@ def main(batchsize=None, epochs=1, explain=True, save=False,train_model=True, lo
                                       ["Valid MRR", "Test MRR", "Trainings Error"], 'Model Error',
                                       file_name="GNN" + "performance")
                 if explain:
-                    # plots.sumlrp()
-                    explains(valid_set, gnn, nn, exp_adj, explain_data.x, data.adj_t, False)
+                    # explains(valid_set, gnn, nn, exp_adj, explain_data.x, data.adj_t, False)
 
-                    pass
+                    # This generates a subgraph
+                    # passable size for entries 47,188,105, 8, 10
+                    src, tar = int(valid_set["source_node"][105]), int(valid_set["target_node"][105])
+                    subgraph = utils_func.get_subgraph(torch_sparse.SparseTensor.from_dense(exp_adj), src, tar, 2)
+                    print(src, tar)
+                    # to do add the predicted edge back in
+                    x_new, subgraph, edge = utils_func.reindex(subgraph, data.x, (src, tar))
+                    print(edge)
+
+                    # Save subgraph if wanted --> slightly bugged as i do not change src & tar
+                    # pd.DataFrame(x_new.numpy()).to_csv("data/subgraph_"+str(edge[0])+"_"+str(edge[1])+"_features_2.csv",index=False)
+                    # pd.DataFrame(subgraph.numpy()).to_csv("data/subgraph_"+str(edge[0])+"_"+str(edge[1])+"_edges_2.csv",index=False)
+
+                    tmp = torch_geometric.utils.to_dense_adj(subgraph).squeeze()
+                    subgraph = torch_geometric.utils.to_dense_adj(
+                        subgraph).squeeze()
+
+                    subgraph.to(device), x_new.to(device)
+                    z = gnnexplainer(subgraph, gnn, nn, edge, x_new)
+                    #z = CAM(subgraph,gnn,x_new)
+                    #z = get_top_edges_edge_ig(gnn,nn,x_new,subgraph,edge)
+                    print(torch_sparse.SparseTensor.from_dense(z))
+                    print(z.shape, z.min(), z.max())
+                    #plots.plt_gnnexp(z,edge[0],edge[1])
+                    #plots.plot_cam(z,subgraph,edge[0],edge[1])
+
         average[run, 0] = valid_mrr[-1]
         average[run, 1] = test_mrr[-1]
     print("Testset avarage Performance:", average[:, 1].mean(), "Testset variance:",

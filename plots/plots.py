@@ -1,8 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import igraph
+import torch_geometric.utils
 from openTSNE import TSNE
-
+import scipy.sparse as ssp
 from utils import utils_func, utils
 
 
@@ -228,7 +229,7 @@ def plot_explain(relevances, src, tar, walks, pos, gamma):
     gamma = str(gamma)
     gamma = gamma.replace('.', '')
     node = str(src)
-    name = "heatmaps/LRP_plot_" + pos + "_example_" + node + gamma + "0.svg"
+    name = "LRP_plot_" + pos + "_example_" + node + gamma + "0.svg"
     plt.tight_layout()
     fig.savefig(name)
     fig.show()
@@ -275,4 +276,91 @@ def tsne_plot():
     plt.axis("off")
     plt.savefig("plots/tsne.jpg")
 
+    plt.show()
+
+
+def plt_gnnexp(rel, src, tar):
+    print(torch_geometric.utils.dense_to_sparse(rel))
+    edge_index, edge_weight = torch_geometric.utils.dense_to_sparse(rel)
+
+    graph = igraph.Graph()
+    nodes = list(set(np.asarray(edge_index).flatten()))
+
+    for node in nodes:
+        graph.add_vertices(str(node))
+
+    x, y = [], []
+    for i in range(edge_index.shape[1]):
+        graph.add_edges([(edge_index[0, i], edge_index[1, i])])
+        x.append(edge_index[0, i]), y.append(edge_index[1, i])
+
+    place = np.array(list(graph.layout_kamada_kawai()))
+    fig, axs = plt.subplots()
+
+    edge_weight = edge_weight.detach().numpy()
+    max_abs = np.abs(max(edge_weight))
+    for i in range(len(edge_weight)):
+        a = [place[nodes.index(nodes.index(edge_index[0, i])), 0], place[nodes.index(edge_index[0, i]), 1]]
+        b = [place[nodes.index(nodes.index(edge_index[1, i])), 0], place[nodes.index(edge_index[1, i]), 1]]
+        color = 'red' if edge_weight[i] > 0.0 else 'blue'
+        alpha = np.clip((1 / max_abs) * np.abs(edge_weight[i]), 0, 1)
+
+        axs.arrow(a[0], a[1], b[0] - a[0], b[1] - a[1], color=color, lw=0.5, alpha=alpha, length_includes_head=True,
+                  head_width=0.075)
+
+    # nodes plotting
+    # TODO Src & target
+    for i in range(len(nodes)):
+        axs.plot(place[i, 0], place[i, 1], 'o', color='grey', alpha=0.3, ms=3)
+
+    axs.plot(place[nodes.index(src), 0], place[nodes.index(src), 1], 'o',
+             color='yellowgreen', ms=5, label="source node")
+    axs.plot(place[nodes.index(tar), 0], place[nodes.index(tar), 1], 'o',
+             color='gold', ms=5, label="target node")
+
+    plt.savefig("plots/gnn_exp.jpeg")
+    plt.show()
+
+
+def plot_cam(rel, adj, src, tar):
+    rel = rel.detach().numpy()
+    edge_index, edge_weight = torch_geometric.utils.dense_to_sparse(adj)
+
+    graph = igraph.Graph()
+    nodes = list(set(np.asarray(edge_index).flatten()))
+
+    for node in nodes:
+        graph.add_vertices(str(node))
+
+    x, y = [], []
+    for i in range(edge_index.shape[1]):
+        graph.add_edges([(edge_index[0, i], edge_index[1, i])])
+        x.append(edge_index[0, i]), y.append(edge_index[1, i])
+
+    place = np.array(list(graph.layout_kamada_kawai()))
+
+    fig, axs = plt.subplots()
+    for i in range(len(edge_weight)):
+        a = [place[nodes.index(nodes.index(edge_index[0, i])), 0], place[nodes.index(edge_index[0, i]), 1]]
+        b = [place[nodes.index(nodes.index(edge_index[1, i])), 0], place[nodes.index(edge_index[1, i]), 1]]
+        axs.arrow(a[0], a[1], b[0] - a[0], b[1] - a[1], color='grey', lw=0.5, alpha=0.3, length_includes_head=True,
+                  head_width=0.075)
+
+    max_abs = max(np.abs(rel))
+
+    # TODO set edgecolor for src tar
+    for i in range(len(rel)):
+        if rel[i] > 0:
+            alpha = np.clip((4 / max_abs) * rel[i], 0, 1)
+            axs.plot(place[i, 0], place[i, 1], 'o', color='red', alpha=alpha, ms=3)
+        else:
+            alpha = np.clip(-(4 / max_abs) * rel[i], 0, 1)
+            axs.plot(place[i, 0], place[i, 1], 'o', color='blue', alpha=alpha, ms=3)
+
+    axs.plot(place[nodes.index(src), 0], place[nodes.index(src), 1], 'o',
+             color='yellowgreen', ms=5, label="source node")
+    axs.plot(place[nodes.index(tar), 0], place[nodes.index(tar), 1], 'o',
+             color='gold', ms=5, label="target node")
+
+    plt.savefig("plots/cam.jpeg")
     plt.show()
