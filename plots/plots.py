@@ -6,31 +6,29 @@ from openTSNE import TSNE
 import scipy.sparse as ssp
 from utils import utils_func, utils
 
+def node_plt(walks, gnn, r_src, r_tar, tar, x, edge_index, pred):
+    pass
 
 def layers_sum(walks, gnn, r_src, r_tar, tar, x, edge_index, pred):
     arr = np.zeros((5, 1))
     arr[0] = pred.detach().sum()
     walks = np.asarray(walks)
     l = set(walks[:, 3])
-
     for node in l:
         res = gnn.lrp(x, edge_index, [node, node, node, node], r_src, r_tar, tar)
         arr[1] += res[0]
-
     l = set([tuple((walks[x, 2], walks[x, 3])) for x in range(walks.shape[0])])
     for node in l:
         res = gnn.lrp(x, edge_index, [node[0], node[0], node[0], node[1]], r_src, r_tar, tar)
         arr[2] += res[1]
-
     l = set([tuple((walks[x, 1], walks[x, 2], walks[x, 3])) for x in range(walks.shape[0])])
     for node in l:
         res = gnn.lrp(x, edge_index, [node[0], node[0], node[1], node[2]], r_src, r_tar, tar)
         arr[3] += res[2]
-
     for walk in walks:
         res = gnn.lrp(x, edge_index, walk, r_src, r_tar, tar)
         arr[4] += res[3]
-
+    #print(walks)
     fig, ax = plt.subplots()
     ax.bar([0, 1, 2, 3, 4], arr.flatten().T, width=0.35, color="mediumslateblue")
     ax.set_xticks([0, 1, 2, 3, 4],
@@ -166,6 +164,7 @@ def plot_explain(relevances, src, tar, walks, pos, gamma):
 
     fig, axs = plt.subplots()
     val_abs = 0
+    print(relevances)
     max_abs = np.abs(max(map((lambda x: x.sum()), relevances)))
 
     sum_s = 0
@@ -278,6 +277,63 @@ def tsne_plot():
 
     plt.show()
 
+def plt_node_lrp(rel, src, tar,walks):
+    graph = igraph.Graph()
+    nodes = list(set(np.asarray(walks).flatten()))
+    n = 0
+    print(nodes)
+    print(rel.shape)
+    for node in nodes:
+        graph.add_vertices(str(node))
+
+    x, y = [], []
+    for walk in walks:
+        graph.add_edges([(str(walk[0]), str(walk[1])), (str(walk[1]), str(walk[2])), (str(walk[2]), str(walk[3]))])
+        x.append(nodes.index(walk[0])), y.append(nodes.index(walk[1]))
+        x.append(nodes.index(walk[1])), y.append(nodes.index(walk[2]))
+        x.append(nodes.index(walk[2])), y.append(nodes.index(walk[1]))
+
+    place = np.array(list(graph.layout_kamada_kawai()))
+    # edges plotting
+
+    fig, axs = plt.subplots()
+    val_abs = 0
+
+    for walk in walks[:-1]:
+        a = [place[nodes.index(walk[0]), 0], place[nodes.index(walk[1]), 0], place[nodes.index(walk[2]), 0],
+             place[nodes.index(walk[3]), 0]]
+        b = [place[nodes.index(walk[0]), 1], place[nodes.index(walk[1]), 1], place[nodes.index(walk[2]), 1],
+             place[nodes.index(walk[3]), 1]]
+        tx, ty = utils.shrink(a, b)
+        loops = utils_func.self_loops(a, b)
+        loops.append((tx, ty))
+
+        axs.arrow(a[0], b[0], a[1] - a[0], b[1] - b[0], color='grey', lw=0.5, alpha=0.3, length_includes_head=True,
+                  head_width=0.075)
+        axs.arrow(a[1], b[1], a[2] - a[1], b[2] - b[1], color='grey', lw=0.5, alpha=0.3, length_includes_head=True,
+                  head_width=0.075)
+        axs.arrow(a[2], b[2], a[3] - a[2], b[3] - b[2], color='grey', lw=0.5, alpha=0.3, length_includes_head=True,
+                  head_width=0.075)
+
+        n += 1
+
+    # nodes plotting
+    max_abs = max(np.abs(rel[nodes]))
+    for i in range(len(nodes)):
+        if rel[nodes[i]] > 0:
+            alpha = np.clip((4 / max_abs) * rel[nodes[i]], 0, 1)
+            axs.plot(place[i, 0], place[i, 1], 'o', color='red', alpha=alpha, ms=3)
+        else:
+            alpha = np.clip(-(4 / max_abs) * rel[nodes[i]], 0, 1)
+            axs.plot(place[i, 0], place[i, 1], 'o', color='blue', alpha=alpha, ms=3)
+
+    axs.plot(place[nodes.index(src), 0], place[nodes.index(src), 1], 'o',
+             color='yellowgreen', ms=5, label="source node")
+    axs.plot(place[nodes.index(tar), 0], place[nodes.index(tar), 1], 'o',
+             color='gold', ms=5, label="target node")
+
+    plt.savefig("plots/lrp_node.jpeg")
+    plt.show()
 
 def plt_gnnexp(rel, src, tar):
     print(torch_geometric.utils.dense_to_sparse(rel))
@@ -302,7 +358,11 @@ def plt_gnnexp(rel, src, tar):
     for i in range(len(edge_weight)):
         a = [place[nodes.index(nodes.index(edge_index[0, i])), 0], place[nodes.index(edge_index[0, i]), 1]]
         b = [place[nodes.index(nodes.index(edge_index[1, i])), 0], place[nodes.index(edge_index[1, i]), 1]]
-        color = 'red' if edge_weight[i] > 0.0 else 'blue'
+        if edge_weight[i] > 0.0:
+            color = 'red'
+        else:
+            print("test")
+            color = 'blue'
         alpha = np.clip((1 / max_abs) * np.abs(edge_weight[i]), 0, 1)
 
         axs.arrow(a[0], a[1], b[0] - a[0], b[1] - a[1], color=color, lw=0.5, alpha=alpha, length_includes_head=True,
@@ -322,39 +382,49 @@ def plt_gnnexp(rel, src, tar):
     plt.show()
 
 
-def plot_cam(rel, adj, src, tar):
+def plot_cam(rel, adj, src, tar,walks):
     rel = rel.detach().numpy()
-    edge_index, edge_weight = torch_geometric.utils.dense_to_sparse(adj)
-
+    nodes = list(set(np.asarray(walks).flatten()))
     graph = igraph.Graph()
-    nodes = list(set(np.asarray(edge_index).flatten()))
 
+    fig, axs = plt.subplots()
     for node in nodes:
         graph.add_vertices(str(node))
 
     x, y = [], []
-    for i in range(edge_index.shape[1]):
-        graph.add_edges([(edge_index[0, i], edge_index[1, i])])
-        x.append(edge_index[0, i]), y.append(edge_index[1, i])
+    for walk in walks:
+        graph.add_edges([(str(walk[0]), str(walk[1])), (str(walk[1]), str(walk[2])), (str(walk[2]), str(walk[3]))])
+        x.append(nodes.index(walk[0])), y.append(nodes.index(walk[1]))
+        x.append(nodes.index(walk[1])), y.append(nodes.index(walk[2]))
+        x.append(nodes.index(walk[2])), y.append(nodes.index(walk[1]))
 
     place = np.array(list(graph.layout_kamada_kawai()))
 
-    fig, axs = plt.subplots()
-    for i in range(len(edge_weight)):
-        a = [place[nodes.index(nodes.index(edge_index[0, i])), 0], place[nodes.index(edge_index[0, i]), 1]]
-        b = [place[nodes.index(nodes.index(edge_index[1, i])), 0], place[nodes.index(edge_index[1, i]), 1]]
-        axs.arrow(a[0], a[1], b[0] - a[0], b[1] - a[1], color='grey', lw=0.5, alpha=0.3, length_includes_head=True,
+    for walk in walks:
+        a = [place[nodes.index(walk[0]), 0], place[nodes.index(walk[1]), 0], place[nodes.index(walk[2]), 0],
+             place[nodes.index(walk[3]), 0]]
+        b = [place[nodes.index(walk[0]), 1], place[nodes.index(walk[1]), 1], place[nodes.index(walk[2]), 1],
+             place[nodes.index(walk[3]), 1]]
+        tx, ty = utils.shrink(a, b)
+        loops = utils_func.self_loops(a, b)
+        loops.append((tx, ty))
+
+        axs.arrow(a[0], b[0], a[1] - a[0], b[1] - b[0], color='grey', lw=0.5, alpha=0.3, length_includes_head=True,
+                  head_width=0.075)
+        axs.arrow(a[1], b[1], a[2] - a[1], b[2] - b[1], color='grey', lw=0.5, alpha=0.3, length_includes_head=True,
+                  head_width=0.075)
+        axs.arrow(a[2], b[2], a[3] - a[2], b[3] - b[2], color='grey', lw=0.5, alpha=0.3, length_includes_head=True,
                   head_width=0.075)
 
-    max_abs = max(np.abs(rel))
+    max_abs = max(np.abs(rel[nodes]))
 
     # TODO set edgecolor for src tar
-    for i in range(len(rel)):
-        if rel[i] > 0:
-            alpha = np.clip((4 / max_abs) * rel[i], 0, 1)
+    for i in range(len(nodes)):
+        if rel[nodes[i]] > 0:
+            alpha = np.clip((4 / max_abs) * rel[nodes[i]], 0, 1)
             axs.plot(place[i, 0], place[i, 1], 'o', color='red', alpha=alpha, ms=3)
         else:
-            alpha = np.clip(-(4 / max_abs) * rel[i], 0, 1)
+            alpha = np.clip(-(4 / max_abs) * rel[nodes[i]], 0, 1)
             axs.plot(place[i, 0], place[i, 1], 'o', color='blue', alpha=alpha, ms=3)
 
     axs.plot(place[nodes.index(src), 0], place[nodes.index(src), 1], 'o',

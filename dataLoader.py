@@ -28,7 +28,6 @@ class LinkPredData:
         x = torch.from_numpy(features)
         x = x.to(torch.float32)  # more for consistency than necessity
         dataset = data.Data(x, edge_index)
-
         self.num_edges = edge_index.shape[1]
         self.num_nodes = x.shape[0]
 

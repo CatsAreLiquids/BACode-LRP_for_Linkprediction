@@ -13,6 +13,32 @@ from utils import validation, utils_func, utils
 from plots import plots
 from GNNexplainer import gnnexplainer, get_top_edges_edge_ig, CAM
 
+class GCNLayer(torch.nn.Module):
+    def __init__(self, c_in, c_out):
+        super().__init__()
+        self.layer = torch.nn.Linear(c_in, c_out,bias=False)
+
+    def forward(self, x, adj, mask):
+        if mask is not None:
+            adj  = adj*mask+torch.eye(adj.shape[0])
+        return torch.spmm(adj, self.layer(x))
+
+class testGCN():
+    def __init__(self, gnn):
+        super().__init__()
+        self.layers = [GCNLayer(s, 256) for s in (128, 256, 256)]
+
+        self.layers[0].layer.weight.data, self.layers[1].layer.weight.data, self.layers[
+        2].layer.weight.data = gnn.input.lin.weight.data, gnn.hidden.lin.weight.data, gnn.output.lin.weight.data
+
+    def forward(self, x, adj, masks):
+        tmp = x
+        for layer, mask in zip(self.layers, masks):
+            if self.layers.index(layer) < 2:
+                tmp = relu(layer.forward(tmp, adj, mask))
+            else :
+                tmp = layer.forward(tmp, adj, mask)
+        return tmp
 
 class GNN(torch.nn.Module):
     """
@@ -21,36 +47,79 @@ class GNN(torch.nn.Module):
 
     def __init__(self):
         # build GNN here
-        # super(GNN, self).__init__()
-        super().__init__()
+        super(GNN, self).__init__()
+        #super().__init__()
         self.input = GCNConv(128, 256, bias=False)
         self.hidden = GCNConv(256, 256, bias=False)
         self.output = GCNConv(256, 256, bias=False)
 
-    def forward(self, x, edge_index, mask=None):
+    def forward(self, x, edge_index, mask=None, deg=None):
         if mask is not None:
             n = x.shape[0]
-            edge_index_tmp = torch_sparse.SparseTensor.from_dense((edge_index * mask[0]) + torch.eye(n))
-            print("l1: ", edge_index_tmp.requires_grad())
-            h = self.input(x, edge_index_tmp)
+            tmp = edge_index + torch.eye(edge_index.shape[0])
+            deg = tmp.sum(dim=0).pow(-0.5)
+            deg[deg == float('inf')] = 0
+            A = deg.view(-1, 1) * tmp * deg.view(1, -1)
+            print(edge_index)
+            print(torch.spmm(A,torch.spmm(x, self.input.lin.weight.data.T)))
+            edge_index_tmp = torch_sparse.SparseTensor.from_dense(edge_index*mask[0]+torch.eye(n)) # turn into sparse
+            h = self.input(x, torch_sparse.SparseTensor.from_dense(edge_index))
+            print(h)
+            print(h-torch.spmm(A,torch.spmm(x, self.input.lin.weight.data.T)))
             X = relu(h)
-            n = X.shape[0]
-            edge_index_tmp = torch_sparse.SparseTensor.from_dense((edge_index * mask[1]) + torch.eye(n))
-            print("l2: ", edge_index_tmp.requires_grad())
+            edge_index_tmp = torch_sparse.SparseTensor.from_dense(edge_index * mask[1] + torch.eye(n))
             h = self.hidden(X, edge_index_tmp)
             X = relu(h)
-            n = X.shape[0]
-            edge_index_tmp = torch_sparse.SparseTensor.from_dense((edge_index * mask[2]) + torch.eye(n))
-            print("l3: ", edge_index_tmp.requires_grad())
-            h = self.output(X, edge_index_tmp)
+
+            h = self.output(X, torch_sparse.SparseTensor.from_dense(edge_index))
+            #print("e3",edge_index_tmp)
+
         else:
+
             h = self.input(x, edge_index)
             X = relu(h)
             h = self.hidden(X, edge_index)
             X = relu(h)
-            print(X.device)
             h = self.output(X, edge_index)
         return h
+
+    def lrp_node(self, x, edge_index, r_src, r_tar, tar, epsilon=0, gamma=0):
+        def roh(layer):
+            with torch.no_grad():
+                cp = copy.deepcopy(layer)
+                cp.lin.weight[:, :] = cp.lin.weight + (gamma * torch.clamp(cp.lin.weight, min=0))
+                return cp
+
+        A = [None] * 3
+        R = [None] * 4
+
+        R[-1] = r_tar +r_src
+
+        x.requires_grad_(True)
+
+        A[0] = x.data.clone().requires_grad_(True)
+        A[1] = relu(self.input(A[0], edge_index)).data.clone().requires_grad_(True)
+        A[2] = relu(self.hidden(A[1], edge_index)).data.clone().requires_grad_(True)
+
+        z = epsilon + roh(self.output).forward(A[2], edge_index)
+        s = R[3] / (z + 1e-15)
+        (z * s.data).sum().backward()
+        c = A[2].grad
+        R[2] = A[2].data * c
+
+        z = epsilon + roh(self.hidden).forward(A[1], edge_index)
+        s = R[2] / (z + 1e-15)
+        (z * s.data).sum().backward()
+        c = A[1].grad
+        R[1] = A[1].data * c
+
+        z = epsilon + roh(self.input).forward(A[0], edge_index)
+        s = R[1] / (z + 1e-15)
+        (z * s.data).sum().backward()
+        c = A[0].grad
+        R[0] = A[0].data * c
+
+        return R[0].sum(dim=1).detach().numpy()
 
     def lrp(self, x, edge_index, walk, r_src, r_tar, tar, epsilon=0, gamma=0):
 
@@ -109,16 +178,13 @@ class NN(torch.nn.Module):
 
     def __init__(self):
         # build MLP here
-        # super(NN, self).__init__()
-        super().__init__()
+        super(NN, self).__init__()
         self.input = torch.nn.Linear(256, 256, bias=False)
         self.hidden = torch.nn.Linear(256, 256, bias=False)
         self.output = torch.nn.Linear(256, 1, bias=False)
 
-    def forward(self, src, tar, emb=None, classes=False):
-        if emb is not None:
-            x = emb[src] + emb[tar]
-        else:
+    def forward(self, x,src=None, tar=None, emb=None, classes=False):
+        if src is not None and tar is not None:
             x = src + tar
         h = self.input(x)
         X = relu(h)
@@ -130,6 +196,7 @@ class NN(torch.nn.Module):
 
     # noinspection PyTypeChecker
     def lrp(self, src, tar, r, epsilon=0, gamma=0):
+
         def roh(layer):
             with torch.no_grad():
                 cp = copy.deepcopy(layer)
@@ -164,6 +231,7 @@ class NN(torch.nn.Module):
         (z * s.data).sum().backward()
         src_grad = src.grad
         tar_grad = tar.grad
+
         return src * src_grad, tar * tar_grad
 
 
@@ -215,21 +283,25 @@ def explains(test_set, gnn, mlp, adj, x, edge_index, validation_plot=False, prun
     mid = gnn(x, edge_index)  # features, edgeindex
     pos_pred = mlp(mid[src], mid[tar])
 
-    samples = [47]  # , 53, 5, 188, 105]
+    samples = [47]  #47 , 53, 5, 188, 105]
     random = False
     val_mul = []
     score = 0
     e = 0.0
-    gammas = [0.02]  # [0.0, 0.02,0.0,0.02]
+    gammas = [0.0]  # [0.0, 0.02,0.0,0.02]
     gamma = 0.02
+    z = copy.deepcopy(x)
+
     for gamma in gammas:
         if validation_plot: val = []
         for i in samples:
-            print("test")
+
             p = []
+            print(type(src[i]))
             walks = utils_func.walks(adj, src[i], tar[i])
             r_src, r_tar = mlp.lrp(mid[src[i]], mid[tar[i]], pos_pred[i], gamma=gamma, epsilon=e)
-
+            node_exp = gnn.lrp_node(x, edge_index, r_src, r_tar, tar[i], gamma=gamma, epsilon=e)
+            print(r_src.sum(),r_src.shape,r_tar.sum(),r_tar.shape)
             if relevances: plots.layers_sum(walks, gnn, r_src, r_tar, tar[i], x, edge_index, pos_pred[i])
             for walk in walks:
                 if prunning:
@@ -237,7 +309,7 @@ def explains(test_set, gnn, mlp, adj, x, edge_index, validation_plot=False, prun
 
                 if masking:
                     utils_func.masking(gnn, mlp, z, src[i], tar[i], edge_index, adj, walk, gamma=gamma)
-
+            print(p[-1].shape,p[-1].sum())
             if validation_plot:
                 if random:
                     p = validation.validation_random(walks, (r_src.detach().sum() + r_tar.detach().sum()))
@@ -248,6 +320,7 @@ def explains(test_set, gnn, mlp, adj, x, edge_index, validation_plot=False, prun
             if plot:
                 walks.append([src[i].numpy(), src[i].numpy(), src[i].numpy(), tar[i].numpy()])
                 plots.plot_explain(p, src[i], tar[i], walks, "pos", gamma)
+                plots.plt_node_lrp(node_exp,  src[i], tar[i], walks)
 
         if gamma == 0.02: e = 0.2
 
@@ -277,7 +350,6 @@ def test(batchsize, data_set, x, adj, evaluator, gnn, nn, accuracy=False):
 
         # positive sampling
         pos_preds += [torch.sigmoid(nn(graph_rep[src_tmp], graph_rep[tar_tmp]).squeeze().cpu())]
-
         # negative sampling
         src_tmp = src_tmp.view(-1, 1).repeat(1, 20).view(-1)
         tar_neg_tmp = tar_neg_tmp.view(-1)
@@ -297,26 +369,17 @@ def test(batchsize, data_set, x, adj, evaluator, gnn, nn, accuracy=False):
 
 
 def main(batchsize=1, epochs=1, explain=True, save=False, train_model=False, load=True, runs=1, plot=False):
-    # ----------------------- Set up
-    # globals
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     np.random.default_rng()
 
     # loading the data
     dataset = dataLoader.LinkPredData("data/", "mini_graph", use_subset=True)
+
     data = dataset.load()
     split = dataset.get_edge_split()
     train_set, valid_set, test_set = split["train"], split["valid"], split["test"]
-    # subgraph loading
-    """
-    x_new = torch.from_numpy(pd.read_csv("data/subgraph_27_58_features_3.csv").to_numpy()).float()
-    subgraph = torch.from_numpy(pd.read_csv("data/subgraph_27_58_edges_3.csv").to_numpy())
-    edge = (27,58) #TODO put into dataset somehow
-    """
 
-    # Preprocessing
     tmp = data.adj_t.set_diag()
-    adj = data.adj_t.set_diag()
     deg = tmp.sum(dim=0).pow(-0.5)
     deg[deg == float('inf')] = 0
     tmp = deg.view(-1, 1) * tmp * deg.view(1, -1)
@@ -327,19 +390,19 @@ def main(batchsize=1, epochs=1, explain=True, save=False, train_model=False, loa
     if load:
         gnn.load_state_dict(torch.load("models/gnn_2100_50_0015"))
         nn.load_state_dict(torch.load("models/nn_2100_50_0015"))
-    gnn.to(device), nn.to(device)  # , data.to(device)
+    gnn.to(device), nn.to(device), data.to(device)
+    t_GCN = testGCN(gnn)
     optimizer = torch.optim.Adam(list(gnn.parameters()) + list(nn.parameters()), lr=0.0005)
     evaluator = Evaluator(name='ogbl-citation2')
 
     # adjusting batchsize for full Dataset
     if batchsize is None:
         batchsize = dataset.num_edges
-    if explain:  # change to explain and False for subgraph loading
+    if explain:
         # to plot proper plot the the LRP-method we need all walks:
-        explain_data = dataset.load(transform=False, explain=explain)
-        exp_adj = torch_geometric.utils.to_dense_adj(explain_data.edge_index).squeeze()
-        utils_func.adjMatrix(explain_data.edge_index, explain_data.num_nodes)  # Transpose of adj Matrix for find walks
-
+        explain_data = dataset.load(transform=False, explain=False)
+        exp_adj = utils_func.adjMatrix(explain_data.edge_index,
+                                       explain_data.num_nodes)  # Transpose of adj Matrix for find walks
     # ----------------------- training & testing
     average = np.zeros((runs, 2))
     for run in range(runs):
@@ -348,8 +411,8 @@ def main(batchsize=1, epochs=1, explain=True, save=False, train_model=False, loa
         for i in range(0, epochs):
             if train_model:
                 loss[i] = train(batchsize, train_set, data.x, data.adj_t, optimizer, gnn, nn).detach()
-            # valid_mrr[i] = test(batchsize, valid_set, data.x, data.adj_t, evaluator, gnn, nn)
-            # test_mrr[i] = test(batchsize, test_set, data.x, data.adj_t, evaluator, gnn, nn)
+            #valid_mrr[i] = test(batchsize, valid_set, data.x, data.adj_t, evaluator, gnn, nn)
+            #test_mrr[i] = test(batchsize, test_set, data.x, data.adj_t, evaluator, gnn, nn)
 
             if valid_mrr[i] > best and save:
                 best = valid_mrr[i]
@@ -365,16 +428,15 @@ def main(batchsize=1, epochs=1, explain=True, save=False, train_model=False, loa
                                       ["Valid MRR", "Test MRR", "Trainings Error"], 'Model Error',
                                       file_name="GNN" + "performance")
                 if explain:
-                    # explains(valid_set, gnn, nn, exp_adj, explain_data.x, data.adj_t, False)
+                    #explains(valid_set, gnn, nn, exp_adj, explain_data.x, data.adj_t, False)
 
                     # This generates a subgraph
                     # passable size for entries 47,188,105, 8, 10
-                    src, tar = int(valid_set["source_node"][105]), int(valid_set["target_node"][105])
+                    src, tar = int(valid_set["source_node"][47]), int(valid_set["target_node"][47])
                     subgraph = utils_func.get_subgraph(torch_sparse.SparseTensor.from_dense(exp_adj), src, tar, 2)
-                    print(src, tar)
                     # to do add the predicted edge back in
                     x_new, subgraph, edge = utils_func.reindex(subgraph, data.x, (src, tar))
-                    print(edge)
+                    #print(edge)
 
                     # Save subgraph if wanted --> slightly bugged as i do not change src & tar
                     # pd.DataFrame(x_new.numpy()).to_csv("data/subgraph_"+str(edge[0])+"_"+str(edge[1])+"_features_2.csv",index=False)
@@ -383,15 +445,16 @@ def main(batchsize=1, epochs=1, explain=True, save=False, train_model=False, loa
                     tmp = torch_geometric.utils.to_dense_adj(subgraph).squeeze()
                     subgraph = torch_geometric.utils.to_dense_adj(
                         subgraph).squeeze()
-
+                    walks = utils_func.walks(tmp,edge[0],edge[1])
                     subgraph.to(device), x_new.to(device)
-                    z = gnnexplainer(subgraph, gnn, nn, edge, x_new)
-                    #z = CAM(subgraph,gnn,x_new)
+                    print(deg)
+                    #z = gnnexplainer(subgraph, t_GCN, nn, edge, x_new, deg)
+                    z = CAM(subgraph,gnn,x_new)
                     #z = get_top_edges_edge_ig(gnn,nn,x_new,subgraph,edge)
-                    print(torch_sparse.SparseTensor.from_dense(z))
-                    print(z.shape, z.min(), z.max())
+                    #print(torch_sparse.SparseTensor.from_dense(z))
+                    #print(z.shape, z.min(), z.max())
                     #plots.plt_gnnexp(z,edge[0],edge[1])
-                    #plots.plot_cam(z,subgraph,edge[0],edge[1])
+                    plots.plot_cam(z,subgraph,edge[0],edge[1],walks)
 
         average[run, 0] = valid_mrr[-1]
         average[run, 1] = test_mrr[-1]

@@ -18,3 +18,4 @@ outdated/verification.py
 *.zip
 *.svg
 *.jpeg
+encoderDecoder2.py

@@ -14,7 +14,7 @@ def adjMatrix(edges, numNodes, selfLoops=True):
     for edge in edges.T:
         adj[edge[0], edge[1]] += 1
 
-    return adj
+    return torch.from_numpy(adj)
 
 
 def find_walks(src, tar, walks):
@@ -149,6 +149,7 @@ def similarity(walks, relevances, x, target, type):
 def get_subgraph(adj, src, tar, hops):
     edge = torch_geometric.utils.to_edge_index(adj)
 
+
     tmp = []
     subset, edge_index, mapping, edge_mask = torch_geometric.utils.k_hop_subgraph(
         src, hops, edge[0], relabel_nodes=False, directed=False, flow="target_to_source")
@@ -164,7 +165,6 @@ def get_subgraph(adj, src, tar, hops):
     tmp += edge_index.T.tolist()
 
     tmp.sort()
-
     return torch.asarray(list(tmp for tmp, _ in itertools.groupby(tmp))).T
 
 
@@ -182,7 +182,7 @@ def reindex(subgraph, x, edge):
 
         n += 1
 
-    return x[mapping], subgraph, (mapping.index(edge[0]), mapping.index(edge[1]))
+    return x[mapping], subgraph, (torch.tensor(mapping.index(edge[0])), torch.tensor(mapping.index(edge[1])))
 
 
 def adj_t(adj):

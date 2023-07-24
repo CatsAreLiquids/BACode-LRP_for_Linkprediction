@@ -15,7 +15,7 @@ def sigm(z):
     return torch.tanh(0.5 * z) * 0.5 + 0.5
 
 
-def gnnexplainer(adj, gnn, nn, edge, H0=None, steps=2, lr=0.5, lambd=0.01, verbose=False):
+def gnnexplainer(adj, gnn, nn, edge, H0=None,deg=None, steps=100, lr=0.5, lambd=0.01, verbose=False):
     # Assumption we only use base the modified adj map
     with torch.autograd.detect_anomaly():
         z = (torch.ones(adj.shape) * adj * 2)
@@ -24,13 +24,12 @@ def gnnexplainer(adj, gnn, nn, edge, H0=None, steps=2, lr=0.5, lambd=0.01, verbo
         adj_t = utils_func.adj_t(adj).to_dense()
         for i in bar:
             z.requires_grad_(True)
-            # tmp = gnn.forward(H0, adj_t, mask=[sigm(z)] * num_layer).sum()
-            # print(tmp.shape)#[g.label]  # ,sigm(z)
-            score = torch.sigmoid(
-                nn(edge[0], edge[1], emb=gnn.forward(H0, adj_t, mask=[sigm(z)] * num_layer), classes=False))  # src,tar
-            emp = -score
-            reg = lambd * (z ** 2).sum()  # torch.zeros((1,))
+            emb = gnn.forward(H0, adj_t, [sigm(z)] * num_layer)
+            score = nn(emb[edge[0]]+emb[edge[1]],  classes=False)  # src,tar
+            emp = -score #constant
+            reg = lambd * (z ** 2).sum()  # constant
             if i in [j ** 5 for j in range(10)] and verbose: print('%5d %8.3f %8.3f' % (i, emp.item(), reg.item()))
+
             (emp + reg).backward()
             with torch.no_grad():
                 z = (z - lr * z.grad)
@@ -78,12 +77,12 @@ def get_top_edges_edge_ig(gnn, nn, H0, adj, target, drop_selfloop=False):
 
 def CAM(adj, gnn, H0=None, masks=None):
     if masks is None:
-        masks = [adj] * 3
+        masks = adj
 
-    adj = utils_func.adj_t(adj).to_dense()
+    adj = torch_sparse.SparseTensor.from_dense(adj)
 
-    A = torch_sparse.SparseTensor.from_dense(torch.eye(H0.shape[0]).squeeze(0))
-    H = gnn.forward(H0, adj, mask=masks)
+    #A = torch_sparse.SparseTensor.from_dense(torch.eye(H0.shape[0]).squeeze(0))
+    H = gnn.forward(H0, adj)
     print("H pre sum", H.shape)
     H = H.sum(dim=1) / 20 ** .5
     print("H post sum", H.shape)
