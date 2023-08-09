@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import igraph
+import torch
 import torch_geometric.utils
 from openTSNE import TSNE
 import scipy.sparse as ssp
@@ -14,6 +15,7 @@ def layers_sum(walks, gnn, r_src, r_tar, tar, x, edge_index, pred):
     arr[0] = pred.detach().sum()
     walks = np.asarray(walks)
     l = set(walks[:, 3])
+
     for node in l:
         res = gnn.lrp(x, edge_index, [node, node, node, node], r_src, r_tar, tar)
         arr[1] += res[0]
@@ -335,12 +337,32 @@ def plt_node_lrp(rel, src, tar,walks):
     plt.savefig("plots/lrp_node.jpeg")
     plt.show()
 
+def reindex(nodes, edgeindex,src,tar):
+    new = torch.arange(0,len(nodes))
+    tmp = torch.vstack((torch.asarray(nodes),new)).T
+    for i in range(tmp.shape[0]):
+        tmp1 = np.flatnonzero(tmp[i][0] == edgeindex[0])
+        tmp2 = np.flatnonzero(tmp[i][0] == edgeindex[1])
+        if tmp[i][0] == tar : tar_new = tmp[i][1]
+        if tmp[i][0] == src : src_new = tmp[i][1]
+
+        # reindexing
+        edgeindex[0, tmp1] = tmp[i][1]
+        edgeindex[1, tmp2] = tmp[i][1]
+
+    return new.tolist(), edgeindex, tar_new, src_new
+
+
 def plt_gnnexp(rel, src, tar):
-    print(torch_geometric.utils.dense_to_sparse(rel))
     edge_index, edge_weight = torch_geometric.utils.dense_to_sparse(rel)
+
+    print("edges", edge_index)
 
     graph = igraph.Graph()
     nodes = list(set(np.asarray(edge_index).flatten()))
+    print(nodes)
+    if len(nodes)+1 != nodes[-1]:
+        nodes, edge_index, tar, src = reindex(nodes,edge_index,src,tar)
 
     for node in nodes:
         graph.add_vertices(str(node))
@@ -355,21 +377,19 @@ def plt_gnnexp(rel, src, tar):
 
     edge_weight = edge_weight.detach().numpy()
     max_abs = np.abs(max(edge_weight))
+
     for i in range(len(edge_weight)):
         a = [place[nodes.index(nodes.index(edge_index[0, i])), 0], place[nodes.index(edge_index[0, i]), 1]]
         b = [place[nodes.index(nodes.index(edge_index[1, i])), 0], place[nodes.index(edge_index[1, i]), 1]]
         if edge_weight[i] > 0.0:
             color = 'red'
         else:
-            print("test")
             color = 'blue'
-        alpha = np.clip((1 / max_abs) * np.abs(edge_weight[i]), 0, 1)
+        alpha = np.clip((4 / max_abs) * np.abs(edge_weight[i]), 0, 1)
 
-        axs.arrow(a[0], a[1], b[0] - a[0], b[1] - a[1], color=color, lw=0.5, alpha=alpha, length_includes_head=True,
+        axs.arrow(b[0], b[1], a[0] - b[0], a[1] - b[1], color=color, lw=0.5, alpha=alpha, length_includes_head=True,
                   head_width=0.075)
 
-    # nodes plotting
-    # TODO Src & target
     for i in range(len(nodes)):
         axs.plot(place[i, 0], place[i, 1], 'o', color='grey', alpha=0.3, ms=3)
 
@@ -377,8 +397,10 @@ def plt_gnnexp(rel, src, tar):
              color='yellowgreen', ms=5, label="source node")
     axs.plot(place[nodes.index(tar), 0], place[nodes.index(tar), 1], 'o',
              color='gold', ms=5, label="target node")
+    # nodes plotting
+    # TODO Src & target
 
-    plt.savefig("plots/gnn_exp.jpeg")
+    plt.savefig("plots/gnn_exp_.jpeg")
     plt.show()
 
 
@@ -387,9 +409,9 @@ def plot_cam(rel, adj, src, tar,walks):
     nodes = list(set(np.asarray(walks).flatten()))
     graph = igraph.Graph()
 
-    fig, axs = plt.subplots()
     for node in nodes:
         graph.add_vertices(str(node))
+
 
     x, y = [], []
     for walk in walks:
@@ -415,11 +437,11 @@ def plot_cam(rel, adj, src, tar,walks):
                   head_width=0.075)
         axs.arrow(a[2], b[2], a[3] - a[2], b[3] - b[2], color='grey', lw=0.5, alpha=0.3, length_includes_head=True,
                   head_width=0.075)
-
     max_abs = max(np.abs(rel[nodes]))
 
     # TODO set edgecolor for src tar
     for i in range(len(nodes)):
+        print(rel[nodes[i]])
         if rel[nodes[i]] > 0:
             alpha = np.clip((4 / max_abs) * rel[nodes[i]], 0, 1)
             axs.plot(place[i, 0], place[i, 1], 'o', color='red', alpha=alpha, ms=3)

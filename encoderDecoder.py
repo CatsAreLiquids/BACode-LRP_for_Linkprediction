@@ -13,6 +13,7 @@ from utils import validation, utils_func, utils
 from plots import plots
 from GNNexplainer import gnnexplainer, get_top_edges_edge_ig, CAM
 
+
 class GCNLayer(torch.nn.Module):
     def __init__(self, c_in, c_out):
         super().__init__()
@@ -21,7 +22,9 @@ class GCNLayer(torch.nn.Module):
     def forward(self, x, adj, mask):
         if mask is not None:
             adj  = adj*mask+torch.eye(adj.shape[0])
+        #adj = adj.to_dense()
         return torch.spmm(adj, self.layer(x))
+
 
 class testGCN():
     def __init__(self, gnn):
@@ -33,12 +36,15 @@ class testGCN():
 
     def forward(self, x, adj, masks):
         tmp = x
+        if masks is None:
+            masks = [None] * len(self.layers)
         for layer, mask in zip(self.layers, masks):
             if self.layers.index(layer) < 2:
                 tmp = relu(layer.forward(tmp, adj, mask))
             else :
                 tmp = layer.forward(tmp, adj, mask)
         return tmp
+
 
 class GNN(torch.nn.Module):
     """
@@ -60,19 +66,14 @@ class GNN(torch.nn.Module):
             deg = tmp.sum(dim=0).pow(-0.5)
             deg[deg == float('inf')] = 0
             A = deg.view(-1, 1) * tmp * deg.view(1, -1)
-            print(edge_index)
-            print(torch.spmm(A,torch.spmm(x, self.input.lin.weight.data.T)))
             edge_index_tmp = torch_sparse.SparseTensor.from_dense(edge_index*mask[0]+torch.eye(n)) # turn into sparse
             h = self.input(x, torch_sparse.SparseTensor.from_dense(edge_index))
-            print(h)
-            print(h-torch.spmm(A,torch.spmm(x, self.input.lin.weight.data.T)))
             X = relu(h)
             edge_index_tmp = torch_sparse.SparseTensor.from_dense(edge_index * mask[1] + torch.eye(n))
             h = self.hidden(X, edge_index_tmp)
             X = relu(h)
 
             h = self.output(X, torch_sparse.SparseTensor.from_dense(edge_index))
-            #print("e3",edge_index_tmp)
 
         else:
 
@@ -118,7 +119,7 @@ class GNN(torch.nn.Module):
         (z * s.data).sum().backward()
         c = A[0].grad
         R[0] = A[0].data * c
-
+        print(R[0].shape)
         return R[0].sum(dim=1).detach().numpy()
 
     def lrp(self, x, edge_index, walk, r_src, r_tar, tar, epsilon=0, gamma=0):
@@ -166,6 +167,7 @@ class GNN(torch.nn.Module):
         c = A[0].grad
         R[0] = A[0].data * c
         R[0] = R[0][walk[0]]
+
 
         return R[3].sum().detach().numpy(), R[2].sum().detach().numpy(), R[1].sum().detach().numpy(), R[
             0].sum().detach().numpy()
@@ -283,7 +285,7 @@ def explains(test_set, gnn, mlp, adj, x, edge_index, validation_plot=False, prun
     mid = gnn(x, edge_index)  # features, edgeindex
     pos_pred = mlp(mid[src], mid[tar])
 
-    samples = [47]  #47 , 53, 5, 188, 105]
+    samples = [5]  #47 , 53, 5, 188, 105]
     random = False
     val_mul = []
     score = 0
@@ -297,11 +299,11 @@ def explains(test_set, gnn, mlp, adj, x, edge_index, validation_plot=False, prun
         for i in samples:
 
             p = []
-            print(type(src[i]))
             walks = utils_func.walks(adj, src[i], tar[i])
+
             r_src, r_tar = mlp.lrp(mid[src[i]], mid[tar[i]], pos_pred[i], gamma=gamma, epsilon=e)
             node_exp = gnn.lrp_node(x, edge_index, r_src, r_tar, tar[i], gamma=gamma, epsilon=e)
-            print(r_src.sum(),r_src.shape,r_tar.sum(),r_tar.shape)
+
             if relevances: plots.layers_sum(walks, gnn, r_src, r_tar, tar[i], x, edge_index, pos_pred[i])
             for walk in walks:
                 if prunning:
@@ -309,7 +311,6 @@ def explains(test_set, gnn, mlp, adj, x, edge_index, validation_plot=False, prun
 
                 if masking:
                     utils_func.masking(gnn, mlp, z, src[i], tar[i], edge_index, adj, walk, gamma=gamma)
-            print(p[-1].shape,p[-1].sum())
             if validation_plot:
                 if random:
                     p = validation.validation_random(walks, (r_src.detach().sum() + r_tar.detach().sum()))
@@ -320,7 +321,7 @@ def explains(test_set, gnn, mlp, adj, x, edge_index, validation_plot=False, prun
             if plot:
                 walks.append([src[i].numpy(), src[i].numpy(), src[i].numpy(), tar[i].numpy()])
                 plots.plot_explain(p, src[i], tar[i], walks, "pos", gamma)
-                plots.plt_node_lrp(node_exp,  src[i], tar[i], walks)
+                #plots.plt_node_lrp(node_exp,  src[i], tar[i], walks)
 
         if gamma == 0.02: e = 0.2
 
@@ -341,7 +342,8 @@ def test(batchsize, data_set, x, adj, evaluator, gnn, nn, accuracy=False):
     src, tar, tar_neg = data_set["source_node"], data_set["target_node"], data_set["target_node_neg"]
 
     pos_preds, neg_preds = [], []
-    graph_rep = gnn(x, adj)
+    #graph_rep = gnn(x, adj)
+    graph_rep = gnn.forward(x, adj, masks=None)
     for i in range(0, src.shape[0], batchsize):
         idx = permutation[i:i + batchsize]
         src_tmp = src[idx]
@@ -350,11 +352,13 @@ def test(batchsize, data_set, x, adj, evaluator, gnn, nn, accuracy=False):
 
         # positive sampling
         pos_preds += [torch.sigmoid(nn(graph_rep[src_tmp], graph_rep[tar_tmp]).squeeze().cpu())]
+
         # negative sampling
         src_tmp = src_tmp.view(-1, 1).repeat(1, 20).view(-1)
         tar_neg_tmp = tar_neg_tmp.view(-1)
         neg_preds += [torch.sigmoid(nn(graph_rep[src_tmp], graph_rep[tar_neg_tmp]).squeeze().cpu())]
 
+    print(len(neg_preds),"\n",len(pos_preds))
     pos_pred = torch.cat(pos_preds, dim=0)
     neg_pred = torch.cat(neg_preds, dim=0)
 
@@ -368,7 +372,7 @@ def test(batchsize, data_set, x, adj, evaluator, gnn, nn, accuracy=False):
     })['mrr_list'].mean().item()
 
 
-def main(batchsize=1, epochs=1, explain=True, save=False, train_model=False, load=True, runs=1, plot=False):
+def main(batchsize=None, epochs=1, explain=True, save=False, train_model=False, load=True, runs=1, plot=False):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     np.random.default_rng()
 
@@ -403,6 +407,7 @@ def main(batchsize=1, epochs=1, explain=True, save=False, train_model=False, loa
         explain_data = dataset.load(transform=False, explain=False)
         exp_adj = utils_func.adjMatrix(explain_data.edge_index,
                                        explain_data.num_nodes)  # Transpose of adj Matrix for find walks
+
     # ----------------------- training & testing
     average = np.zeros((runs, 2))
     for run in range(runs):
@@ -413,6 +418,8 @@ def main(batchsize=1, epochs=1, explain=True, save=False, train_model=False, loa
                 loss[i] = train(batchsize, train_set, data.x, data.adj_t, optimizer, gnn, nn).detach()
             #valid_mrr[i] = test(batchsize, valid_set, data.x, data.adj_t, evaluator, gnn, nn)
             #test_mrr[i] = test(batchsize, test_set, data.x, data.adj_t, evaluator, gnn, nn)
+            #valid_mrr[i] = test(batchsize, valid_set, data.x, data.adj_t, evaluator, t_GCN, nn)
+            #test_mrr[i] = test(batchsize, test_set, data.x, data.adj_t, evaluator, t_GCN, nn)
 
             if valid_mrr[i] > best and save:
                 best = valid_mrr[i]
@@ -429,35 +436,37 @@ def main(batchsize=1, epochs=1, explain=True, save=False, train_model=False, loa
                                       file_name="GNN" + "performance")
                 if explain:
                     #explains(valid_set, gnn, nn, exp_adj, explain_data.x, data.adj_t, False)
-
                     # This generates a subgraph
                     # passable size for entries 47,188,105, 8, 10
-                    src, tar = int(valid_set["source_node"][47]), int(valid_set["target_node"][47])
-                    subgraph = utils_func.get_subgraph(torch_sparse.SparseTensor.from_dense(exp_adj), src, tar, 2)
+                    src, tar = int(valid_set["source_node"][5]), int(valid_set["target_node"][5])
+                    adj = data.adj_t.to_dense()
+                    adj[tar,src]= 1
+                    subgraph = utils_func.get_subgraph(torch_sparse.SparseTensor.from_dense(exp_adj), src, tar, 3)
+
                     # to do add the predicted edge back in
-                    x_new, subgraph, edge = utils_func.reindex(subgraph, data.x, (src, tar))
-                    #print(edge)
-
-                    # Save subgraph if wanted --> slightly bugged as i do not change src & tar
-                    # pd.DataFrame(x_new.numpy()).to_csv("data/subgraph_"+str(edge[0])+"_"+str(edge[1])+"_features_2.csv",index=False)
-                    # pd.DataFrame(subgraph.numpy()).to_csv("data/subgraph_"+str(edge[0])+"_"+str(edge[1])+"_edges_2.csv",index=False)
-
+                    x_new, subgraph, edge, mapping = utils_func.reindex(subgraph, data.x, (src, tar))
                     tmp = torch_geometric.utils.to_dense_adj(subgraph).squeeze()
                     subgraph = torch_geometric.utils.to_dense_adj(
                         subgraph).squeeze()
-                    walks = utils_func.walks(tmp,edge[0],edge[1])
-                    subgraph.to(device), x_new.to(device)
-                    print(deg)
-                    #z = gnnexplainer(subgraph, t_GCN, nn, edge, x_new, deg)
-                    z = CAM(subgraph,gnn,x_new)
+                    #print(subgraph[44,116], subgraph[116,44])
+                    #print(torch_sparse.SparseTensor.from_dense(subgraph))
+
+                    walks = utils_func.walks(subgraph,edge[0],edge[1])
+                    nodes = list(set([x[-1] for x in walks]))
+                    mask = torch.zeros(subgraph.shape)
+                    for i in nodes:
+                        mask[i,i] = 1
+
+                    #z = gnnexplainer(subgraph.T, t_GCN, nn, edge, x_new,mask)
+                    z = CAM(subgraph.T,gnn,x_new)
                     #z = get_top_edges_edge_ig(gnn,nn,x_new,subgraph,edge)
                     #print(torch_sparse.SparseTensor.from_dense(z))
-                    #print(z.shape, z.min(), z.max())
                     #plots.plt_gnnexp(z,edge[0],edge[1])
-                    plots.plot_cam(z,subgraph,edge[0],edge[1],walks)
+                    plots.plot_cam(z,subgraph.T,edge[0],edge[1],walks)
 
         average[run, 0] = valid_mrr[-1]
         average[run, 1] = test_mrr[-1]
+
     print("Testset avarage Performance:", average[:, 1].mean(), "Testset variance:",
           ((average[:, 1] - average[:, 1].mean()) ** 2 / runs).sum())
     print("Validation avarage Performance:", average[:, 0].mean(), "Validation variance:",

@@ -8,11 +8,10 @@ import torch_sparse
 
 def adjMatrix(edges, numNodes, selfLoops=True):
     adj = np.zeros((numNodes, numNodes))
-
     if selfLoops: adj += np.identity(numNodes)
 
     for edge in edges.T:
-        adj[edge[0], edge[1]] += 1
+        adj[edge[0], edge[1]] = 1
 
     return torch.from_numpy(adj)
 
@@ -149,22 +148,22 @@ def similarity(walks, relevances, x, target, type):
 def get_subgraph(adj, src, tar, hops):
     edge = torch_geometric.utils.to_edge_index(adj)
 
-
     tmp = []
     subset, edge_index, mapping, edge_mask = torch_geometric.utils.k_hop_subgraph(
-        src, hops, edge[0], relabel_nodes=False, directed=False, flow="target_to_source")
-    tmp += edge_index.T.tolist()
-    subset, edge_index, mapping, edge_mask = torch_geometric.utils.k_hop_subgraph(
-        src, hops, edge[0], relabel_nodes=False, directed=False, flow="source_to_target")
-    tmp += edge_index.T.tolist()
-    subset, edge_index, mapping, edge_mask = torch_geometric.utils.k_hop_subgraph(
-        tar, hops, edge[0], relabel_nodes=False, directed=False, flow="target_to_source")
-    tmp += edge_index.T.tolist()
-    subset, edge_index, mapping, edge_mask = torch_geometric.utils.k_hop_subgraph(
-        tar, hops, edge[0], relabel_nodes=False, directed=False, flow="source_to_target")
+        src, hops, edge[0], relabel_nodes=False, directed=True, flow="target_to_source")
     tmp += edge_index.T.tolist()
 
-    tmp.sort()
+    subset, edge_index, mapping, edge_mask = torch_geometric.utils.k_hop_subgraph(
+        src, hops, edge[0], relabel_nodes=False, directed=True, flow="source_to_target")
+    tmp += edge_index.T.tolist()
+
+    subset, edge_index, mapping, edge_mask = torch_geometric.utils.k_hop_subgraph(
+        tar, hops, edge[0], relabel_nodes=False, directed=True, flow="target_to_source")
+    tmp += edge_index.T.tolist()
+
+    subset, edge_index, mapping, edge_mask = torch_geometric.utils.k_hop_subgraph(
+        tar, hops, edge[0], relabel_nodes=False, directed=True, flow="source_to_target")
+    tmp += edge_index.T.tolist()
     return torch.asarray(list(tmp for tmp, _ in itertools.groupby(tmp))).T
 
 
@@ -175,14 +174,14 @@ def reindex(subgraph, x, edge):
     for idx in idxs:
         tmp1 = np.flatnonzero(idx == subgraph[0])
         tmp2 = np.flatnonzero(idx == subgraph[1])
+
         # reindexing
         subgraph[0, tmp1] = n
         subgraph[1, tmp2] = n
         mapping.append(idx)
-
         n += 1
 
-    return x[mapping], subgraph, (torch.tensor(mapping.index(edge[0])), torch.tensor(mapping.index(edge[1])))
+    return x[mapping], subgraph, (torch.tensor(mapping.index(edge[0])), torch.tensor(mapping.index(edge[1]))), mapping
 
 
 def adj_t(adj):
