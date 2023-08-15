@@ -435,7 +435,7 @@ def main(batchsize=None, epochs=1, explain=True, save=False, train_model=False, 
                                       ["Valid MRR", "Test MRR", "Trainings Error"], 'Model Error',
                                       file_name="GNN" + "performance")
                 if explain:
-                    #explains(valid_set, gnn, nn, exp_adj, explain_data.x, data.adj_t, False)
+                    explains(valid_set, gnn, nn, exp_adj, explain_data.x, data.adj_t, False)
                     # This generates a subgraph
                     # passable size for entries 47,188,105, 8, 10
                     src, tar = int(valid_set["source_node"][5]), int(valid_set["target_node"][5])
@@ -457,12 +457,12 @@ def main(batchsize=None, epochs=1, explain=True, save=False, train_model=False, 
                     for i in nodes:
                         mask[i,i] = 1
 
-                    #z = gnnexplainer(subgraph.T, t_GCN, nn, edge, x_new,mask)
-                    z = CAM(subgraph.T,gnn,x_new)
+                    z = gnnexplainer(subgraph.T, t_GCN, nn, edge, x_new,mask)
+                    #z = CAM(subgraph.T,gnn,x_new)
                     #z = get_top_edges_edge_ig(gnn,nn,x_new,subgraph,edge)
                     #print(torch_sparse.SparseTensor.from_dense(z))
-                    #plots.plt_gnnexp(z,edge[0],edge[1])
-                    plots.plot_cam(z,subgraph.T,edge[0],edge[1],walks)
+                    plots.plt_gnnexp(z,edge[0],edge[1], walks)
+                    #plots.plot_cam(z,subgraph.T,edge[0],edge[1],walks)
 
         average[run, 0] = valid_mrr[-1]
         average[run, 1] = test_mrr[-1]

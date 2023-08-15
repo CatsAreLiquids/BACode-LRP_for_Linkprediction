@@ -4,6 +4,7 @@ import torch
 import torch_geometric
 import itertools
 import torch_sparse
+from operator import itemgetter
 
 
 def adjMatrix(edges, numNodes, selfLoops=True):
@@ -79,7 +80,7 @@ def walks(A, src, tar):
             for v3 in np.where(A[:, v2])[0]:
                 for v4 in np.where(A[:, v3])[0]:
                     w += [[v4, v3, v2, v1.numpy().flatten()[0]]]
-
+    w.sort(key=itemgetter(0,1,2,3))
     return w
 
 

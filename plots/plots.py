@@ -163,10 +163,10 @@ def plot_explain(relevances, src, tar, walks, pos, gamma):
 
     place = np.array(list(graph.layout_kamada_kawai()))
     # edges plotting
-
+    print(walks)
+    print(place)
     fig, axs = plt.subplots()
     val_abs = 0
-    print(relevances)
     max_abs = np.abs(max(map((lambda x: x.sum()), relevances)))
 
     sum_s = 0
@@ -353,34 +353,37 @@ def reindex(nodes, edgeindex,src,tar):
     return new.tolist(), edgeindex, tar_new, src_new
 
 
-def plt_gnnexp(rel, src, tar):
+def plt_gnnexp(rel, src, tar, walks):
     edge_index, edge_weight = torch_geometric.utils.dense_to_sparse(rel)
 
-    print("edges", edge_index)
 
     graph = igraph.Graph()
-    nodes = list(set(np.asarray(edge_index).flatten()))
-    print(nodes)
-    if len(nodes)+1 != nodes[-1]:
-        nodes, edge_index, tar, src = reindex(nodes,edge_index,src,tar)
-
+    nodes = list(set(np.asarray(walks).flatten()))
+    print(walks)
     for node in nodes:
         graph.add_vertices(str(node))
 
+    #x, y = [], []
+    #for i in range(edge_index.shape[1]):
+    #    graph.add_edges([(edge_index[0, i], edge_index[1, i])])
+    #    x.append(edge_index[0, i]), y.append(edge_index[1, i])
+
     x, y = [], []
-    for i in range(edge_index.shape[1]):
-        graph.add_edges([(edge_index[0, i], edge_index[1, i])])
-        x.append(edge_index[0, i]), y.append(edge_index[1, i])
+    for walk in walks:
+        graph.add_edges([(str(walk[0]), str(walk[1])), (str(walk[1]), str(walk[2])), (str(walk[2]), str(walk[3]))])
+        x.append(nodes.index(walk[0])), y.append(nodes.index(walk[1]))
+        x.append(nodes.index(walk[1])), y.append(nodes.index(walk[2]))
+        x.append(nodes.index(walk[2])), y.append(nodes.index(walk[1]))
 
     place = np.array(list(graph.layout_kamada_kawai()))
     fig, axs = plt.subplots()
 
+    print(place)
     edge_weight = edge_weight.detach().numpy()
     max_abs = np.abs(max(edge_weight))
-
     for i in range(len(edge_weight)):
-        a = [place[nodes.index(nodes.index(edge_index[0, i])), 0], place[nodes.index(edge_index[0, i]), 1]]
-        b = [place[nodes.index(nodes.index(edge_index[1, i])), 0], place[nodes.index(edge_index[1, i]), 1]]
+        a = [place[nodes.index(edge_index[0, i]), 0], place[nodes.index(edge_index[0, i]), 1]]
+        b = [place[nodes.index(edge_index[1, i]), 0], place[nodes.index(edge_index[1, i]), 1]]
         if edge_weight[i] > 0.0:
             color = 'red'
         else:
