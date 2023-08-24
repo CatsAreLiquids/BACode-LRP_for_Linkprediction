@@ -2,7 +2,40 @@ import numpy as np
 import pandas as pd
 import torch
 from torch_geometric import data, transforms
+from typing import Dict
 
+class ToyData:
+    def __init__(self, *args, **kwargs) -> None:
+        self.transform = transforms.ToSparseTensor()
+
+    def load(self, transform= True, explain = False) -> data.Data:
+        self.edge_index = torch.tensor([[0, 1, 2, 3, 5, 1, 4, 1, 4, 4],
+                                   [1, 4, 1, 4, 4, 0, 1, 2, 3, 5]])
+        x = torch.tensor([[1,0]*64,
+                          [1,0]*64,
+                          [1,0]*64,
+                          [0,1]*64,
+                          [0,1]*64,
+                          [0,1]*64]).to(torch.float32)
+        dataset = data.Data(x, self.edge_index)
+        self.num_edges = self.edge_index.shape[1]
+        self.num_nodes = x.shape[0]
+
+        if transform: dataset = self.transform(dataset)
+        return dataset
+    
+    def get_edge_split(self) -> Dict[str,Dict[str, torch.Tensor]]:
+        source_node = self.edge_index[0]
+        target_node = self.edge_index[1]
+        target_node_neg = (self.edge_index[1] + 3)%6
+        target_node_neg[(target_node_neg == 1) | (target_node_neg == 4)] -= 1
+
+        
+
+        valid = test = train = {'source_node' : source_node, 'target_node' : target_node, 'target_node_neg': target_node_neg}
+        split = {"train": train, "valid": valid, "test": test}
+        return split
+        
 
 class LinkPredData:
     def __init__(self, root_dir, name, transform=transforms.ToSparseTensor(), use_year=False, use_subset=True,):
@@ -68,3 +101,10 @@ class LinkPredData:
     def get_representation(self, baseline):
         rep = torch.from_numpy(np.asarray(pd.read_csv(self.root_dir + baseline)))
         return rep
+
+if __name__ == '__main__':
+    dataset = ToyData("data/", "mini_graph", use_subset=True)
+    d = dataset.load()
+    split = dataset.get_edge_split()
+    print(d)
+    print(split)

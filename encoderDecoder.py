@@ -62,7 +62,7 @@ class GNN(torch.nn.Module):
     def forward(self, x, edge_index, mask=None, deg=None):
         if mask is not None:
             n = x.shape[0]
-            tmp = edge_index + torch.eye(edge_index.shape[0])
+            tmp = edge_index + torch.eye(edge_index.shape[0]) # edge_index is the adjacency matrix in sparse form
             deg = tmp.sum(dim=0).pow(-0.5)
             deg[deg == float('inf')] = 0
             A = deg.view(-1, 1) * tmp * deg.view(1, -1)
@@ -260,7 +260,7 @@ def train(batchsize, train_set, x, adj, optimizer, gnn, nn):
         out = torch.sigmoid(nn(graph_rep[train_src], graph_rep[train_tar]))
         pos_loss = - torch.mean(torch.log(out + 1e-15))
 
-        neg_tar = torch.randint(low=0, high=22064, size=train_src.size(), dtype=torch.long)  # 30657
+        neg_tar = torch.randint(low=0, high=len(graph_rep), size=train_src.size(), dtype=torch.long)  # 30657
         out = torch.sigmoid(nn(graph_rep[train_src], graph_rep[neg_tar]))
         neg_loss = - torch.mean(torch.log(1 - out + 1e-15))
 
@@ -299,7 +299,10 @@ def explains(test_set, gnn, mlp, adj, x, edge_index, validation_plot=False, prun
         for i in samples:
 
             p = []
-            walks = utils_func.walks(adj, src[i], tar[i])
+            tmp = adj.clone()
+            tmp[src[i], tar[i]] = 0
+            tmp[tar[i], src[i]] = 0
+            walks = utils_func.walks(tmp, src[i], tar[i])
 
             r_src, r_tar = mlp.lrp(mid[src[i]], mid[tar[i]], pos_pred[i], gamma=gamma, epsilon=e)
             node_exp = gnn.lrp_node(x, edge_index, r_src, r_tar, tar[i], gamma=gamma, epsilon=e)
@@ -377,7 +380,7 @@ def main(batchsize=None, epochs=1, explain=True, save=False, train_model=False, 
     np.random.default_rng()
 
     # loading the data
-    dataset = dataLoader.LinkPredData("data/", "mini_graph", use_subset=True)
+    dataset = dataLoader.ToyData("data/", "mini_graph", use_subset=True)
 
     data = dataset.load()
     split = dataset.get_edge_split()
@@ -474,4 +477,4 @@ def main(batchsize=None, epochs=1, explain=True, save=False, train_model=False, 
 
 
 if __name__ == "__main__":
-    main()
+    main(1, 100, True, False, True, False, 1, False)
