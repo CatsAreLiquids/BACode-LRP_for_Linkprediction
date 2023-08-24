@@ -277,7 +277,7 @@ def train(batchsize, train_set, x, adj, optimizer, gnn, nn):
     return sum(total_loss) / num_sample
 
 
-def explains(test_set, gnn, mlp, adj, x, edge_index, validation_plot=False, prunning=True, masking=False,
+def explains(test_set, gnn, mlp, adj, x, edge_index,walks, validation_plot=False, prunning=True, masking=False,
              similarity=False,
              plot=True, relevances=False,
              remove_connections= False):
@@ -453,6 +453,7 @@ def main(batchsize=None, epochs=1, explain=True, save=False, train_model=False, 
                 if explain:
                     explains(valid_set, gnn, nn, exp_adj, explain_data.x, data.adj_t, False)
                     explains(valid_set, gnn, nn, exp_adj, explain_data.x, data.adj_t, False, remove_connections= True)
+
                     # This generates a subgraph
                     # passable size for entries 47,188,105, 8, 10
                     src, tar = int(valid_set["source_node"][5]), int(valid_set["target_node"][5])
@@ -468,18 +469,21 @@ def main(batchsize=None, epochs=1, explain=True, save=False, train_model=False, 
                     #print(subgraph[44,116], subgraph[116,44])
                     #print(torch_sparse.SparseTensor.from_dense(subgraph))
 
+                    explains(valid_set, gnn, nn, exp_adj, explain_data.x, data.adj_t, False)
                     walks = utils_func.walks(subgraph,edge[0],edge[1])
                     nodes = list(set([x[-1] for x in walks]))
                     mask = torch.zeros(subgraph.shape)
                     for i in nodes:
                         mask[i,i] = 1
-
+                    walks = utils_func.map_walks(walks, mapping)
+                    print(type(walks[0][0]))
                     z = gnnexplainer(subgraph.T, t_GCN, nn, edge, x_new,mask)
-                    #z = CAM(subgraph.T,gnn,x_new)
+                    plots.plt_gnnexp(z,edge[0],edge[1], walks,mapping)
+
+                    z = CAM(subgraph.T,gnn,x_new)
                     #z = get_top_edges_edge_ig(gnn,nn,x_new,subgraph,edge)
                     #print(torch_sparse.SparseTensor.from_dense(z))
-                    plots.plt_gnnexp(z,edge[0],edge[1], walks)
-                    #plots.plot_cam(z,subgraph.T,edge[0],edge[1],walks)
+                    plots.plot_cam(z,edge[0],edge[1],walks,mapping)
 
         average[run, 0] = valid_mrr[-1]
         average[run, 1] = test_mrr[-1]

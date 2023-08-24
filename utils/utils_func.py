@@ -172,6 +172,7 @@ def reindex(subgraph, x, edge):
     n = 0
     idxs = list(set(subgraph[0].tolist()).union(set(subgraph[1].tolist())))
     mapping = []
+
     for idx in idxs:
         tmp1 = np.flatnonzero(idx == subgraph[0])
         tmp2 = np.flatnonzero(idx == subgraph[1])
@@ -190,3 +191,13 @@ def adj_t(adj):
     deg = tmp.sum(dim=0).pow(-0.5)
     deg[deg == float('inf')] = 0
     return deg.view(-1, 1) * tmp * deg.view(1, -1)
+
+def map_walks(walks, mapping):
+    tmp = np.asarray(walks).flatten()
+    new = np.zeros((tmp.shape))
+
+    nodes = list(set(np.asarray(walks).flatten()))
+    for i in nodes:
+        new[np.flatnonzero(tmp == i)] = int(mapping[i])
+
+    return new.reshape((len(walks),4)).astype(int)
