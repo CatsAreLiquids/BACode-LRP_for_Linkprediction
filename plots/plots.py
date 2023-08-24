@@ -146,9 +146,13 @@ def accuracy(pos_preds, neg_preds):
     plt.show()
 
 
-def plot_explain(relevances, src, tar, walks, pos, gamma):
-    graph = igraph.Graph()
-    nodes = list(set(np.asarray(walks).flatten()))
+def plot_explain(relevances, src, tar, walks, pos, gamma, structure= None):
+    if structure is None:
+        graph = igraph.Graph()
+        nodes = list(set(np.asarray(walks).flatten()))
+    else:
+        graph = structure["graph"]
+        nodes = structure["nodes"]
     n = 0
 
     for node in nodes:
@@ -161,11 +165,11 @@ def plot_explain(relevances, src, tar, walks, pos, gamma):
         x.append(nodes.index(walk[1])), y.append(nodes.index(walk[2]))
         x.append(nodes.index(walk[2])), y.append(nodes.index(walk[1]))
 
-    place = np.array(list(graph.layout_kamada_kawai()))
+    place = np.array(list(graph.layout_kamada_kawai())) if structure is None else structure["place"]
     # edges plotting
-    print(walks)
-    print(place)
     fig, axs = plt.subplots()
+    axs.set_xlim(-1.8, 1.8)
+    axs.set_ylim(-1.8, 1.8)
     val_abs = 0
     max_abs = np.abs(max(map((lambda x: x.sum()), relevances)))
 
@@ -210,6 +214,7 @@ def plot_explain(relevances, src, tar, walks, pos, gamma):
         n += 1
 
         val_abs += np.abs(r)
+        # fig.savefig(f"animation/{n}.png")
 
     # nodes plotting
     for i in range(len(nodes)):
@@ -226,7 +231,7 @@ def plot_explain(relevances, src, tar, walks, pos, gamma):
 
     axs.legend(loc=2, bbox_to_anchor=(-0.15, 1.14))
     axs.axis("off")
-    print(sum_s, sum_t, sum_c)
+    # print(sum_s, sum_t, sum_c)
     gamma = str(gamma)
     gamma = gamma.replace('.', '')
     node = str(src)
@@ -234,7 +239,7 @@ def plot_explain(relevances, src, tar, walks, pos, gamma):
     plt.tight_layout()
     fig.savefig(name)
     fig.show()
-    return val_abs
+    return {'graph' : graph, 'nodes' : nodes, 'place' : place}
 
 
 def validation(relevances: list, node):

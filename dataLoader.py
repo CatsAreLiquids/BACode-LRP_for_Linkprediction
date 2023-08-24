@@ -9,8 +9,10 @@ class ToyData:
         self.transform = transforms.ToSparseTensor()
 
     def load(self, transform= True, explain = False) -> data.Data:
-        self.edge_index = torch.tensor([[0, 1, 2, 3, 5, 1, 4, 1, 4, 4],
-                                   [1, 4, 1, 4, 4, 0, 1, 2, 3, 5]])
+        # self.edge_index = torch.tensor([[0, 1, 2, 3, 5, 1, 4, 1, 4, 4],
+        #                            [1, 4, 1, 4, 4, 0, 1, 2, 3, 5]])
+        self.edge_index = torch.tensor([[0, 1, 2, 3, 4, 5],
+                                        [1, 4, 1, 4, 1, 4]])
         x = torch.tensor([[1,0]*64,
                           [1,0]*64,
                           [1,0]*64,
@@ -33,6 +35,7 @@ class ToyData:
         
 
         valid = test = train = {'source_node' : source_node, 'target_node' : target_node, 'target_node_neg': target_node_neg}
+
         split = {"train": train, "valid": valid, "test": test}
         return split
         

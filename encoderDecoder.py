@@ -22,7 +22,7 @@ class GCNLayer(torch.nn.Module):
     def forward(self, x, adj, mask):
         if mask is not None:
             adj  = adj*mask+torch.eye(adj.shape[0])
-        #adj = adj.to_dense()
+        adj = adj.to_dense()
         return torch.spmm(adj, self.layer(x))
 
 
@@ -119,7 +119,7 @@ class GNN(torch.nn.Module):
         (z * s.data).sum().backward()
         c = A[0].grad
         R[0] = A[0].data * c
-        print(R[0].shape)
+        # print(R[0].shape)
         return R[0].sum(dim=1).detach().numpy()
 
     def lrp(self, x, edge_index, walk, r_src, r_tar, tar, epsilon=0, gamma=0):
@@ -279,13 +279,15 @@ def train(batchsize, train_set, x, adj, optimizer, gnn, nn):
 
 def explains(test_set, gnn, mlp, adj, x, edge_index, validation_plot=False, prunning=True, masking=False,
              similarity=False,
-             plot=True, relevances=False):
+             plot=True, relevances=False,
+             remove_connections= False):
     src, tar = test_set["source_node"], test_set["target_node"]
     # forward passes
     mid = gnn(x, edge_index)  # features, edgeindex
     pos_pred = mlp(mid[src], mid[tar])
 
-    samples = [5]  #47 , 53, 5, 188, 105]
+    samples = [5, -1]  #47 , 53, 5, 188, 105]
+    structure = None
     random = False
     val_mul = []
     score = 0
@@ -297,20 +299,32 @@ def explains(test_set, gnn, mlp, adj, x, edge_index, validation_plot=False, prun
     for gamma in gammas:
         if validation_plot: val = []
         for i in samples:
+            # print(src[i], tar[i])
 
             p = []
             tmp = adj.clone()
-            tmp[src[i], tar[i]] = 0
-            tmp[tar[i], src[i]] = 0
+            if remove_connections:
+                tmp[src[i], tar[i]] = 0
+                tmp[tar[i], src[i]] = 0
             walks = utils_func.walks(tmp, src[i], tar[i])
 
             r_src, r_tar = mlp.lrp(mid[src[i]], mid[tar[i]], pos_pred[i], gamma=gamma, epsilon=e)
             node_exp = gnn.lrp_node(x, edge_index, r_src, r_tar, tar[i], gamma=gamma, epsilon=e)
 
             if relevances: plots.layers_sum(walks, gnn, r_src, r_tar, tar[i], x, edge_index, pos_pred[i])
+            _tmp = edge_index.clone()
+            if remove_connections:
+                tmp = edge_index.to_dense()
             for walk in walks:
                 if prunning:
-                    p.append(gnn.lrp(x, edge_index, walk, r_src, r_tar, tar[i], gamma=gamma, epsilon=e)[-1])
+                    if remove_connections:
+                        _store_tmp = (tmp[src[i], tar[i]], tmp[tar[i], src[i]])
+                        tmp[src[i], tar[i]] = 0
+                        tmp[tar[i], src[i]] = 0
+                        _tmp = torch_sparse.to_torch_sparse(tmp.nonzero().T, tmp[tmp.nonzero(as_tuple=True)].flatten(), tmp.shape[0], tmp.shape[1]).coalesce()
+                        tmp[src[i], tar[i]], tmp[tar[i], src[i]] = _store_tmp
+                    p.append(gnn.lrp(x, _tmp, walk, r_src, r_tar, tar[i], gamma=gamma, epsilon=e)[-1])
+
 
                 if masking:
                     utils_func.masking(gnn, mlp, z, src[i], tar[i], edge_index, adj, walk, gamma=gamma)
@@ -323,7 +337,7 @@ def explains(test_set, gnn, mlp, adj, x, edge_index, validation_plot=False, prun
 
             if plot:
                 walks.append([src[i].numpy(), src[i].numpy(), src[i].numpy(), tar[i].numpy()])
-                plots.plot_explain(p, src[i], tar[i], walks, "pos", gamma)
+                structure = plots.plot_explain(p, src[i], tar[i], walks, "pos", gamma, structure)
                 #plots.plt_node_lrp(node_exp,  src[i], tar[i], walks)
 
         if gamma == 0.02: e = 0.2
@@ -354,14 +368,13 @@ def test(batchsize, data_set, x, adj, evaluator, gnn, nn, accuracy=False):
         tar_neg_tmp = tar_neg[idx]
 
         # positive sampling
-        pos_preds += [torch.sigmoid(nn(graph_rep[src_tmp], graph_rep[tar_tmp]).squeeze().cpu())]
+        pos_preds += [torch.sigmoid(nn(graph_rep[src_tmp], graph_rep[tar_tmp]).squeeze(1).cpu())]
 
         # negative sampling
         src_tmp = src_tmp.view(-1, 1).repeat(1, 20).view(-1)
         tar_neg_tmp = tar_neg_tmp.view(-1)
-        neg_preds += [torch.sigmoid(nn(graph_rep[src_tmp], graph_rep[tar_neg_tmp]).squeeze().cpu())]
+        neg_preds += [torch.sigmoid(nn(graph_rep[src_tmp], graph_rep[tar_neg_tmp]).squeeze(1).cpu())]
 
-    print(len(neg_preds),"\n",len(pos_preds))
     pos_pred = torch.cat(pos_preds, dim=0)
     neg_pred = torch.cat(neg_preds, dim=0)
 
@@ -421,8 +434,8 @@ def main(batchsize=None, epochs=1, explain=True, save=False, train_model=False, 
                 loss[i] = train(batchsize, train_set, data.x, data.adj_t, optimizer, gnn, nn).detach()
             #valid_mrr[i] = test(batchsize, valid_set, data.x, data.adj_t, evaluator, gnn, nn)
             #test_mrr[i] = test(batchsize, test_set, data.x, data.adj_t, evaluator, gnn, nn)
-            #valid_mrr[i] = test(batchsize, valid_set, data.x, data.adj_t, evaluator, t_GCN, nn)
-            #test_mrr[i] = test(batchsize, test_set, data.x, data.adj_t, evaluator, t_GCN, nn)
+            valid_mrr[i] = test(batchsize, valid_set, data.x, data.adj_t, evaluator, t_GCN, nn)
+            test_mrr[i] = test(batchsize, test_set, data.x, data.adj_t, evaluator, t_GCN, nn)
 
             if valid_mrr[i] > best and save:
                 best = valid_mrr[i]
@@ -439,6 +452,7 @@ def main(batchsize=None, epochs=1, explain=True, save=False, train_model=False, 
                                       file_name="GNN" + "performance")
                 if explain:
                     explains(valid_set, gnn, nn, exp_adj, explain_data.x, data.adj_t, False)
+                    explains(valid_set, gnn, nn, exp_adj, explain_data.x, data.adj_t, False, remove_connections= True)
                     # This generates a subgraph
                     # passable size for entries 47,188,105, 8, 10
                     src, tar = int(valid_set["source_node"][5]), int(valid_set["target_node"][5])
@@ -477,4 +491,4 @@ def main(batchsize=None, epochs=1, explain=True, save=False, train_model=False, 
 
 
 if __name__ == "__main__":
-    main(1, 100, True, False, True, False, 1, False)
+    main(1, 100, True, False, True, False, 1, True)
