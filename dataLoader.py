@@ -1,3 +1,4 @@
+#%%
 import numpy as np
 import pandas as pd
 import torch
@@ -11,8 +12,8 @@ class ToyData:
     def load(self, transform= True, explain = False) -> data.Data:
         # self.edge_index = torch.tensor([[0, 1, 2, 3, 5, 1, 4, 1, 4, 4],
         #                            [1, 4, 1, 4, 4, 0, 1, 2, 3, 5]])
-        self.edge_index = torch.tensor([[0, 1, 2, 3, 4, 5],
-                                        [1, 4, 1, 4, 1, 4]])
+        self.edge_index = torch.tensor([[0, 1, 2, 3, 4, 5, 0, 5],
+                                        [1, 4, 1, 4, 1, 4, 3, 2]])
         x = torch.tensor([[1,0]*64,
                           [1,0]*64,
                           [1,0]*64,
@@ -106,8 +107,10 @@ class LinkPredData:
         return rep
 
 if __name__ == '__main__':
-    dataset = ToyData("data/", "mini_graph", use_subset=True)
+    dataset = LinkPredData("data/", "mini_graph", use_subset=True)
     d = dataset.load()
     split = dataset.get_edge_split()
     print(d)
     print(split)
+    ei = torch.stack([split["test"]["source_node"], split["test"]["target_node"]])
+# %%

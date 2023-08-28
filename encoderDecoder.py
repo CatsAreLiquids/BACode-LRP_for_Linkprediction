@@ -9,10 +9,13 @@ import torch_geometric
 import scipy.sparse as ssp
 import pandas as pd
 import dataLoader
-from utils import validation, utils_func, utils
+from utils import validation, utils_func, utils, ainb
 from plots import plots
 from GNNexplainer import gnnexplainer, get_top_edges_edge_ig, CAM
-
+from typing import Literal, Dict, List, Union
+from tqdm import tqdm
+import pickle
+from matplotlib import pyplot as plt
 
 class GCNLayer(torch.nn.Module):
     def __init__(self, c_in, c_out):
@@ -286,7 +289,7 @@ def explains(test_set, gnn, mlp, adj, x, edge_index,walks, validation_plot=False
     mid = gnn(x, edge_index)  # features, edgeindex
     pos_pred = mlp(mid[src], mid[tar])
 
-    samples = [5, -1]  #47 , 53, 5, 188, 105]
+    samples = [5, 47 , 53, 5, 188, 105]
     structure = None
     random = False
     val_mul = []
@@ -337,7 +340,7 @@ def explains(test_set, gnn, mlp, adj, x, edge_index,walks, validation_plot=False
 
             if plot:
                 walks.append([src[i].numpy(), src[i].numpy(), src[i].numpy(), tar[i].numpy()])
-                structure = plots.plot_explain(p, src[i], tar[i], walks, "pos", gamma, structure)
+                structure = plots.plot_explain(p, src[i], tar[i], walks, "pos", gamma, structure, use_structure= False)
                 #plots.plt_node_lrp(node_exp,  src[i], tar[i], walks)
 
         if gamma == 0.02: e = 0.2
@@ -351,6 +354,133 @@ def explains(test_set, gnn, mlp, adj, x, edge_index,walks, validation_plot=False
         score /= len(samples)
         print("similarity score is:", score)
 
+
+def refactored_explains(test_set, gnn, mlp, adj, x, edge_index,
+             similarity=False,
+             plot=True, relevances=False,
+             remove_connections= False):
+
+    src, tar = test_set["source_node"], test_set["target_node"]
+    # forward passes
+    mid = gnn(x, edge_index)  # features, edgeindex
+    pos_pred = mlp(mid[src], mid[tar])
+
+    samples = find_good_samples(edge_index, test_set, criterion= "indirect connections", load = "", save =  False)
+    # samples = [5]#, 47 , 53, 5, 188, 105]
+    # new_samples = 94
+
+    score = 0
+    e = 0.0
+    gammas = [0.0]  # [0.0, 0.02,0.0,0.02]
+    gamma = 0.02
+    z = copy.deepcopy(x)
+
+    for gamma in gammas:
+        for i in samples:
+            structure = None
+            p = []
+            walks, special_walks_indexes = samples[i]
+            if len(walks) > 100: continue
+
+            r_src, r_tar = mlp.lrp(mid[src[i]], mid[tar[i]], pos_pred[i], gamma=gamma, epsilon=e)
+            node_exp = gnn.lrp_node(x, edge_index, r_src, r_tar, tar[i], gamma=gamma, epsilon=e)
+
+            if relevances: plots.layers_sum(walks, gnn, r_src, r_tar, tar[i], x, edge_index, pos_pred[i])
+            tmp = edge_index.clone()
+            for walk in walks:
+                if remove_connections:
+                    indexes = find_index_of_connection(edge_index, src[i], tar[i])
+                    _tmp = remove_connection_at_index(tmp, indexes)
+                else: _tmp = tmp                        
+                p.append(gnn.lrp(x, _tmp, walk, r_src, r_tar, tar[i], gamma=gamma, epsilon=e)[-1])
+
+            if similarity: score += utils_func.similarity(walks, p, x, tar[i], "max")
+
+            if plot:
+                walks.append([src[i].numpy(), src[i].numpy(), src[i].numpy(), tar[i].numpy()])
+                fig, axs = plt.subplots(1, 2, figsize=(12,6))
+                structure = plots.refactored_plot_explain(p, src[i], tar[i], walks, "pos", gamma, structure, use_structure= True, ax= axs[0])
+                plots.refactored_plot_explain([_p if j in special_walks_indexes else np.array(0) for j,_p in enumerate(p)], src[i], tar[i], walks, "pos", gamma, structure, use_structure= True, ax= axs[1])
+                axs[1].legend().remove()
+                plt.show()
+                #plots.plt_node_lrp(node_exp,  src[i], tar[i], walks)
+
+    if similarity:
+        print("similarity score is:", torch.mean(score))
+
+def find_good_samples(adj : torch_sparse.SparseTensor, subset : Dict[str, Union[torch.Tensor, List[torch.Tensor]]], criterion : Literal['indirect connections'] = None, remove_connection : bool = True, load : str = "", save : bool = False, **kwargs) -> Dict[int, List[List[int]]]:
+    """
+    Finds good samples to analyze based on a given criterion
+
+    @param: load: If load is not an empty string, try "torch.load(load)". If it fails continue with criterion
+    @param: save: If True, then store a pickle file with the computed walks
+    """
+    if load != "":
+        try:
+            with open(load, "rb") as f:
+                return pickle.load(f)
+        except FileNotFoundError as err:
+            print(f"Loadig from {load} failed")
+            print(err)
+            print(f"Continuing with criterion: {criterion}")
+    if criterion is None: return [5, 47 , 53, 5, 188, 105]
+    if criterion == "indirect connections":
+        out = _find_samples_with_indirect_connections(adj, subset, remove_connection)
+
+    if save:
+        with open(f"walks with {criterion}.pkl", "wb") as f:
+            pickle.dump(out, f)
+    return out
+    
+def _find_samples_with_indirect_connections(adj : torch_sparse.SparseTensor, subset : Dict[str, torch.Tensor], remove_connection : bool = True) -> Dict[int, List[List[int]]]:
+    out = {}
+    for i, (src, tar, neg_tar) in tqdm(enumerate(zip(*subset.values())), desc= "Alternative connections between src and tar", total= len(subset["source_node"])):
+        if remove_connection:
+            _adj = remove_connection_at_index(adj, find_index_of_connection(adj, src, tar))
+        else: _adj = adj
+        walks = utils_func.walks(_adj, src, tar)
+        indirect_connection_walks = [int(i) for i,w in enumerate(walks) if src.item() in w and tar.item() in w]
+        if len(indirect_connection_walks) > 0:
+            out[i] = [walks, indirect_connection_walks]
+    return out
+
+def find_index_of_connection(sparse_tensor : torch_sparse.SparseTensor, src : int, tar : int) -> torch.Tensor:
+    """
+    Finds the index in the sparse storage for a given connection, returns the indexes in a Tensor
+    """
+    rows = sparse_tensor.storage.row()
+    cols = sparse_tensor.storage.col()
+    _rows = torch.where(rows == tar)[0]
+    _cols = torch.where(cols == src)[0]
+    _rows_t = torch.where(rows == src)[0]
+    _cols_t = torch.where(cols == tar)[0]
+    idx = ainb.ainb(_rows, _cols)
+    idx_t = ainb.ainb(_rows_t, _cols_t)
+    assert idx.sum() <= 1 and idx_t.sum() <= 1, "Should find one match at most" # In the case of repeated indexes we are most likely seeing a runtime error
+    remove_indexes = []
+    if idx.sum(): remove_indexes.append(_rows[idx])
+    if idx_t.sum(): remove_indexes.append(_rows_t[idx_t])
+    remove_indexes.sort()
+    assert torch.tensor(
+        [[rang[r_idx] in [src, tar] for r_idx in remove_indexes] for rang in [rows, cols]]
+        ).all() #  Checks that the indexes to be removed actually correspond to src and target
+    
+    return remove_indexes
+
+def remove_connection_at_index(sparse_tensor : torch_sparse.SparseTensor, indexes : list) -> torch_sparse.SparseTensor:
+    """
+    Removes the connection at the indexes in the sparse storage, returns a new SparseTensor without the connections
+    """
+    if not len(indexes) > 0: return sparse_tensor # If connection is already missing just return same tensor
+    new_row, new_col, new_value = [
+        torch.cat([inner_tensor[i+1: j] for i,j in zip([-1] + indexes[:-1], indexes)]) # Adding -1 at the beginning of the indexes means start from index 0
+        for inner_tensor in [
+                            sparse_tensor.storage.row(),
+                            sparse_tensor.storage.col(),
+                            sparse_tensor.storage.value()
+                            ]
+    ]
+    return torch_sparse.SparseTensor(new_row, None, new_col, new_value, sparse_tensor.sizes())
 
 @torch.no_grad()
 def test(batchsize, data_set, x, adj, evaluator, gnn, nn, accuracy=False):
@@ -393,7 +523,8 @@ def main(batchsize=None, epochs=1, explain=True, save=False, train_model=False, 
     np.random.default_rng()
 
     # loading the data
-    dataset = dataLoader.ToyData("data/", "mini_graph", use_subset=True)
+    dataset = dataLoader.LinkPredData("data/", "mini_graph", use_subset=True)
+    # dataset = dataLoader.ToyData("data/", "mini_graph", use_subset=True)
 
     data = dataset.load()
     split = dataset.get_edge_split()
@@ -451,7 +582,7 @@ def main(batchsize=None, epochs=1, explain=True, save=False, train_model=False, 
                                       ["Valid MRR", "Test MRR", "Trainings Error"], 'Model Error',
                                       file_name="GNN" + "performance")
                 if explain:
-                    explains(valid_set, gnn, nn, exp_adj, explain_data.x, data.adj_t, False)
+                    refactored_explains(valid_set, gnn, nn, exp_adj, explain_data.x, data.adj_t, remove_connections= True)
                     explains(valid_set, gnn, nn, exp_adj, explain_data.x, data.adj_t, False, remove_connections= True)
 
                     # This generates a subgraph
@@ -495,4 +626,5 @@ def main(batchsize=None, epochs=1, explain=True, save=False, train_model=False, 
 
 
 if __name__ == "__main__":
-    main(1, 100, True, False, True, False, 1, True)
+    # main(None, 100, True, False, True, False, 1, False)
+    main()

@@ -1,11 +1,14 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.path import Path
+import matplotlib.patches as patches
 import igraph
 import torch
 import torch_geometric.utils
 from openTSNE import TSNE
 import scipy.sparse as ssp
 from utils import utils_func, utils
+from itertools import groupby
 
 def node_plt(walks, gnn, r_src, r_tar, tar, x, edge_index, pred):
     pass
@@ -146,18 +149,14 @@ def accuracy(pos_preds, neg_preds):
     plt.show()
 
 
-def plot_explain(relevances, src, tar, walks, pos, gamma, structure= None):
-    if structure is None:
-        graph = igraph.Graph()
-        nodes = list(set(np.asarray(walks).flatten()))
-    else:
-        graph = structure["graph"]
-        nodes = structure["nodes"]
+def plot_explain(relevances, src, tar, walks, pos, gamma):
+    graph = igraph.Graph()
+    nodes = list(set(np.asarray(walks).flatten()))
     n = 0
 
 
     for node in nodes:
-        graph.add_vertices(str(node))
+        graph.add_vertices(str(node))   
 
     x, y = [], []
     for walk in walks:
@@ -166,11 +165,105 @@ def plot_explain(relevances, src, tar, walks, pos, gamma, structure= None):
         x.append(nodes.index(walk[1])), y.append(nodes.index(walk[2]))
         x.append(nodes.index(walk[2])), y.append(nodes.index(walk[1]))
 
-    place = np.array(list(graph.layout_kamada_kawai())) if structure is None else structure["place"]
+    place = np.array(list(graph.layout_kamada_kawai()))
     # edges plotting
     fig, axs = plt.subplots()
-    axs.set_xlim(-1.8, 1.8)
-    axs.set_ylim(-1.8, 1.8)
+    val_abs = 0
+    max_abs = np.abs(max(map((lambda x: x.sum()), relevances)))
+
+    sum_s = 0
+    sum_t = 0
+    sum_c = 0
+    for walk in walks[:-1]:
+        r = relevances[n]
+
+    r = r.sum()
+    if src in walk:
+        sum_s += np.abs(r)
+    if tar in walk:
+        sum_t += np.abs(r)
+    if tar in walk or src in walk:
+        sum_c += np.abs(r)
+
+    a = [place[nodes.index(walk[0]), 0], place[nodes.index(walk[1]), 0], place[nodes.index(walk[2]), 0],
+        place[nodes.index(walk[3]), 0]]
+    b = [place[nodes.index(walk[0]), 1], place[nodes.index(walk[1]), 1], place[nodes.index(walk[2]), 1],
+        place[nodes.index(walk[3]), 1]]
+    tx, ty = utils.shrink(a, b)
+    loops = utils_func.self_loops(a, b)
+    loops.append((tx, ty))
+
+    axs.arrow(a[0], b[0], a[1] - a[0], b[1] - b[0], color='grey', lw=0.5, alpha=0.3, length_includes_head=True,
+    head_width=0.075)
+    axs.arrow(a[1], b[1], a[2] - a[1], b[2] - b[1], color='grey', lw=0.5, alpha=0.3, length_includes_head=True,
+    head_width=0.075)
+    axs.arrow(a[2], b[2], a[3] - a[2], b[3] - b[2], color='grey', lw=0.5, alpha=0.3, length_includes_head=True,
+    head_width=0.075)
+
+    for i in loops:
+        if r > 0.0:
+            alpha = np.clip((3 / max_abs) * r, 0, 1)
+            axs.plot(i[0], i[1], alpha=alpha, color='indianred', lw=2.)
+
+        if r < -0.0:
+            alpha = np.clip(-(3 / max_abs) * r, 0, 1)
+            axs.plot(i[0], i[1], alpha=alpha, color='slateblue', lw=2.)
+
+    n += 1
+
+    val_abs += np.abs(r)
+
+    # nodes plotting
+    for i in range(len(nodes)):
+        axs.plot(place[i, 0], place[i, 1], 'o', color='black', ms=3)
+
+    axs.plot(place[nodes.index(src), 0], place[nodes.index(src), 1], 'o',
+    color='yellowgreen', ms=5, label="source node")
+    axs.plot(place[nodes.index(tar), 0], place[nodes.index(tar), 1], 'o',
+    color='gold', ms=5, label="target node")
+
+    # legend shenenigans & # plot specifics
+    axs.plot([], [], color='slateblue', label="negative relevance")
+    axs.plot([], [], color='indianred', label="positive relevance")
+
+    axs.legend(loc=2, bbox_to_anchor=(-0.15, 1.14))
+    axs.axis("off")
+    print(sum_s, sum_t, sum_c)
+    gamma = str(gamma)
+    gamma = gamma.replace('.', '')
+    node = str(src)
+    name = "LRP_plot_" + pos + "_example_" + node + gamma + "0.svg"
+    plt.tight_layout()
+    fig.savefig(name)
+    fig.show()
+    return val_abs
+
+
+def refactored_plot_explain(relevances, src, tar, walks, pos, gamma, structure= None, use_structure= False, ax= None):
+    if structure is None or use_structure is False:
+        graph = igraph.Graph()
+        nodes = list(set(np.asarray(walks).flatten()))
+        for node in nodes:
+            graph.add_vertices(str(node))
+        x, y = [], []
+        for walk in walks:
+            graph.add_edges([(str(walk[0]), str(walk[1])), (str(walk[1]), str(walk[2])), (str(walk[2]), str(walk[3]))])
+            x.append(nodes.index(walk[0])), y.append(nodes.index(walk[1]))
+            x.append(nodes.index(walk[1])), y.append(nodes.index(walk[2]))
+            x.append(nodes.index(walk[2])), y.append(nodes.index(walk[1]))
+        place = np.array(list(graph.layout_kamada_kawai()))
+    else:
+        graph = structure["graph"]
+        nodes = structure["nodes"]
+        x, y = structure["x_y"]
+        place = structure["place"]
+
+    n = 0 
+    # edges plotting
+    if ax is None:
+        fig, ax = plt.subplots()
+    # axs.set_xlim(-1.8, 1.8)
+    # axs.set_ylim(-1.8, 1.8)
     val_abs = 0
     max_abs = np.abs(max(map((lambda x: x.sum()), relevances)))
 
@@ -188,29 +281,31 @@ def plot_explain(relevances, src, tar, walks, pos, gamma, structure= None):
         if tar in walk or src in walk:
             sum_c += np.abs(r)
 
+        points = get_walk_points(place, nodes, walk)
+        plot_walk_trace(points, ax, r, np.clip((3 / max_abs) * r, 0, 1))
         a = [place[nodes.index(walk[0]), 0], place[nodes.index(walk[1]), 0], place[nodes.index(walk[2]), 0],
              place[nodes.index(walk[3]), 0]]
         b = [place[nodes.index(walk[0]), 1], place[nodes.index(walk[1]), 1], place[nodes.index(walk[2]), 1],
              place[nodes.index(walk[3]), 1]]
         tx, ty = utils.shrink(a, b)
         loops = utils_func.self_loops(a, b)
-        loops.append((tx, ty))
+        # loops.append((tx, ty))
 
-        axs.arrow(a[0], b[0], a[1] - a[0], b[1] - b[0], color='grey', lw=0.5, alpha=0.3, length_includes_head=True,
+        ax.arrow(a[0], b[0], a[1] - a[0], b[1] - b[0], color='grey', lw=0.5, alpha=0.3, length_includes_head=True,
                   head_width=0.075)
-        axs.arrow(a[1], b[1], a[2] - a[1], b[2] - b[1], color='grey', lw=0.5, alpha=0.3, length_includes_head=True,
+        ax.arrow(a[1], b[1], a[2] - a[1], b[2] - b[1], color='grey', lw=0.5, alpha=0.3, length_includes_head=True,
                   head_width=0.075)
-        axs.arrow(a[2], b[2], a[3] - a[2], b[3] - b[2], color='grey', lw=0.5, alpha=0.3, length_includes_head=True,
+        ax.arrow(a[2], b[2], a[3] - a[2], b[3] - b[2], color='grey', lw=0.5, alpha=0.3, length_includes_head=True,
                   head_width=0.075)
 
         for i in loops:
             if r > 0.0:
                 alpha = np.clip((3 / max_abs) * r, 0, 1)
-                axs.plot(i[0], i[1], alpha=alpha, color='indianred', lw=2.)
+                ax.plot(i[0], i[1], alpha=alpha, color='indianred', lw=2.)
 
             if r < -0.0:
                 alpha = np.clip(-(3 / max_abs) * r, 0, 1)
-                axs.plot(i[0], i[1], alpha=alpha, color='slateblue', lw=2.)
+                ax.plot(i[0], i[1], alpha=alpha, color='slateblue', lw=2.)
 
         n += 1
 
@@ -219,29 +314,57 @@ def plot_explain(relevances, src, tar, walks, pos, gamma, structure= None):
 
     # nodes plotting
     for i in range(len(nodes)):
-        axs.plot(place[i, 0], place[i, 1], 'o', color='black', ms=3)
+        ax.plot(place[i, 0], place[i, 1], 'o', color='black', ms=3)
 
-    axs.plot(place[nodes.index(src), 0], place[nodes.index(src), 1], 'o',
+    ax.plot(place[nodes.index(src), 0], place[nodes.index(src), 1], 'o',
              color='yellowgreen', ms=5, label="source node")
-    axs.plot(place[nodes.index(tar), 0], place[nodes.index(tar), 1], 'o',
+    ax.plot(place[nodes.index(tar), 0], place[nodes.index(tar), 1], 'o',
              color='gold', ms=5, label="target node")
 
     # legend shenenigans & # plot specifics
-    axs.plot([], [], color='slateblue', label="negative relevance")
-    axs.plot([], [], color='indianred', label="positive relevance")
+    ax.plot([], [], color='slateblue', label="negative relevance")
+    ax.plot([], [], color='indianred', label="positive relevance")
 
-    axs.legend(loc=2, bbox_to_anchor=(-0.15, 1.14))
-    axs.axis("off")
+    ax.legend(loc=2, bbox_to_anchor=(-0.15, 1.14))
+    ax.axis("off")
     # print(sum_s, sum_t, sum_c)
     gamma = str(gamma)
     gamma = gamma.replace('.', '')
     node = str(src)
     name = "LRP_plot_" + pos + "_example_" + node + gamma + "0.svg"
     plt.tight_layout()
-    fig.savefig(name)
-    fig.show()
-    return {'graph' : graph, 'nodes' : nodes, 'place' : place}
+    # fig.savefig(name)
+    # fig.show()
+    return {'graph' : graph, 'nodes' : nodes, 'place' : place, 'x_y': [x,y]}
 
+def get_walk_points(place, nodes, walk):
+    trace_points = [key for key, _group in groupby(walk)]
+    return [place[nodes.index(point)] for point in trace_points]
+
+def plot_walk_trace(points, ax, rel, alpha):
+    if len(points) < 2: return
+    if len(points) == 2:
+        codes = [
+            Path.MOVETO,
+            Path.LINETO,
+        ]
+    if len(points) == 3:
+        codes = [
+            Path.MOVETO,
+            Path.CURVE3,
+            Path.CURVE3,
+        ]
+    if len(points) == 4:
+        codes = [
+            Path.MOVETO,
+            Path.CURVE4,
+            Path.CURVE4,
+            Path.CURVE4,
+        ]
+    path = Path(points, codes)
+    color = 'indianred' if np.sign(rel) else 'slateblue'
+    patch = patches.PathPatch(path, edgecolor= color, alpha= 0 if np.isnan(alpha) else alpha, facecolor='none', lw=2)
+    ax.add_patch(patch)
 
 def validation(relevances: list, node):
     relevances = np.asarray(relevances)

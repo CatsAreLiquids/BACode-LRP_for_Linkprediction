@@ -3,8 +3,10 @@ import numpy as np
 import torch
 import torch_geometric
 import itertools
+from functools import reduce
 import torch_sparse
 from operator import itemgetter
+from typing import List, Literal
 
 
 def adjMatrix(edges, numNodes, selfLoops=True):
@@ -73,7 +75,36 @@ def masking(gnn, nn, input, src, tar, edge_index, adj, walk, gamma=0):
     return x.grad * x.data
 
 
-def walks(A, src, tar):
+def walks(A, src, tar, max_len = 4):
+    if type(A) is torch.Tensor and A.shape[0] == A.shape[1]: return old_walks(A, src, tar)
+    else:
+        return refactored_walks(A, src, tar, max_len)
+
+def refactored_walks(A : torch_sparse.SparseTensor, src : int, tar : int, max_len = 4) -> List[List[int]]:
+    walks_src = [[src.item()]]
+    walks_tar = [[tar.item()]]
+    for _ in range(max_len - 1):
+        walks_src = reduce(lambda x,y: x+y, [_get_next_step_in_walk(A, walk) for walk in walks_src])
+        walks_tar = reduce(lambda x,y: x+y, [_get_next_step_in_walk(A, walk) for walk in walks_tar])
+    
+    out = [walk for walk in walks_src + walks_tar if len(walk) == max_len]
+    return sorted(out, key=itemgetter(*range(max_len)))
+
+def _get_next_step_in_walk(A : torch_sparse.SparseTensor, walk : List[int], direction : Literal['forward', 'backward'] = 'backward') -> List[List[int]]:
+    prev_node, next_node = A.storage.col(), A.storage.row()
+
+    if direction == "forward":    
+        continuation_nodes = next_node[prev_node == walk[0]]
+    elif direction == "backward":
+        continuation_nodes = prev_node[next_node == walk[0]]
+    else:
+        raise ValueError("Direction not recognized")
+    
+    if not len(continuation_nodes) > 0: return [walk] # Walk doesn't continue.
+    return [[continues_with.item()] + walk for continues_with in continuation_nodes]
+
+
+def old_walks(A, src, tar):
     w = []
     for v1 in [src, tar]:
         for v2 in np.where(A[:, v1])[0]:
