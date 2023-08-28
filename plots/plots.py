@@ -156,7 +156,7 @@ def plot_explain(relevances, src, tar, walks, pos, gamma):
 
 
     for node in nodes:
-        graph.add_vertices(str(node))   
+        graph.add_vertices(str(node))
 
     x, y = [], []
     for walk in walks:
@@ -177,50 +177,50 @@ def plot_explain(relevances, src, tar, walks, pos, gamma):
     for walk in walks[:-1]:
         r = relevances[n]
 
-    r = r.sum()
-    if src in walk:
-        sum_s += np.abs(r)
-    if tar in walk:
-        sum_t += np.abs(r)
-    if tar in walk or src in walk:
-        sum_c += np.abs(r)
+        r = r.sum()
+        if src in walk:
+            sum_s += np.abs(r)
+        if tar in walk:
+            sum_t += np.abs(r)
+        if tar in walk or src in walk:
+            sum_c += np.abs(r)
 
-    a = [place[nodes.index(walk[0]), 0], place[nodes.index(walk[1]), 0], place[nodes.index(walk[2]), 0],
-        place[nodes.index(walk[3]), 0]]
-    b = [place[nodes.index(walk[0]), 1], place[nodes.index(walk[1]), 1], place[nodes.index(walk[2]), 1],
-        place[nodes.index(walk[3]), 1]]
-    tx, ty = utils.shrink(a, b)
-    loops = utils_func.self_loops(a, b)
-    loops.append((tx, ty))
+        a = [place[nodes.index(walk[0]), 0], place[nodes.index(walk[1]), 0], place[nodes.index(walk[2]), 0],
+             place[nodes.index(walk[3]), 0]]
+        b = [place[nodes.index(walk[0]), 1], place[nodes.index(walk[1]), 1], place[nodes.index(walk[2]), 1],
+             place[nodes.index(walk[3]), 1]]
+        tx, ty = utils.shrink(a, b)
+        loops = utils_func.self_loops(a, b)
+        loops.append((tx, ty))
 
-    axs.arrow(a[0], b[0], a[1] - a[0], b[1] - b[0], color='grey', lw=0.5, alpha=0.3, length_includes_head=True,
-    head_width=0.075)
-    axs.arrow(a[1], b[1], a[2] - a[1], b[2] - b[1], color='grey', lw=0.5, alpha=0.3, length_includes_head=True,
-    head_width=0.075)
-    axs.arrow(a[2], b[2], a[3] - a[2], b[3] - b[2], color='grey', lw=0.5, alpha=0.3, length_includes_head=True,
-    head_width=0.075)
+        axs.arrow(a[0], b[0], a[1] - a[0], b[1] - b[0], color='grey', lw=0.5, alpha=0.3, length_includes_head=True,
+                  head_width=0.075)
+        axs.arrow(a[1], b[1], a[2] - a[1], b[2] - b[1], color='grey', lw=0.5, alpha=0.3, length_includes_head=True,
+                  head_width=0.075)
+        axs.arrow(a[2], b[2], a[3] - a[2], b[3] - b[2], color='grey', lw=0.5, alpha=0.3, length_includes_head=True,
+                  head_width=0.075)
 
-    for i in loops:
-        if r > 0.0:
-            alpha = np.clip((3 / max_abs) * r, 0, 1)
-            axs.plot(i[0], i[1], alpha=alpha, color='indianred', lw=2.)
+        for i in loops:
+            if r > 0.0:
+                alpha = np.clip((3 / max_abs) * r, 0, 1)
+                axs.plot(i[0], i[1], alpha=alpha, color='indianred', lw=2.)
 
-        if r < -0.0:
-            alpha = np.clip(-(3 / max_abs) * r, 0, 1)
-            axs.plot(i[0], i[1], alpha=alpha, color='slateblue', lw=2.)
+            if r < -0.0:
+                alpha = np.clip(-(3 / max_abs) * r, 0, 1)
+                axs.plot(i[0], i[1], alpha=alpha, color='slateblue', lw=2.)
 
-    n += 1
+        n += 1
 
-    val_abs += np.abs(r)
+        val_abs += np.abs(r)
 
     # nodes plotting
     for i in range(len(nodes)):
         axs.plot(place[i, 0], place[i, 1], 'o', color='black', ms=3)
 
     axs.plot(place[nodes.index(src), 0], place[nodes.index(src), 1], 'o',
-    color='yellowgreen', ms=5, label="source node")
+             color='yellowgreen', ms=5, label="source node")
     axs.plot(place[nodes.index(tar), 0], place[nodes.index(tar), 1], 'o',
-    color='gold', ms=5, label="target node")
+             color='gold', ms=5, label="target node")
 
     # legend shenenigans & # plot specifics
     axs.plot([], [], color='slateblue', label="negative relevance")
