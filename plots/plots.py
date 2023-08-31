@@ -35,13 +35,13 @@ def layers_sum(walks, gnn, r_src, r_tar, tar, x, edge_index, pred):
     ax.bar([0, 1, 2, 3, 4], arr.flatten().T, width=0.35, color="mediumslateblue")
     ax.set_xticks([0, 1, 2, 3, 4],
                   labels=["f(x)", r"$\sum R_J$", r"$\sum R_{JK}$", r"$\sum R_{JKL}$", r"$\sum R_{JKLM}$"])
-    ax.set_yticks([0.0, 0.225, 0.45])
+    #ax.set_yticks([0.0, 0.225, 0.45])
     ax.set_ylabel(r"$\sum f(x)$")
     plt.tight_layout()
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
 
-    plt.savefig("plots/RelevanceAtDifLayers.pdf")
+    plt.savefig("plots/RelevanceAtDifLayers_without_5.svg")
     plt.show()
 
 
@@ -151,10 +151,8 @@ def plot_explain(relevances, src, tar, walks, pos, gamma):
     nodes = list(set(np.asarray(walks).flatten()))
     n = 0
 
-
     for node in nodes:
         graph.add_vertices(str(node))
-
     x, y = [], []
     for walk in walks:
         graph.add_edges([(str(walk[0]), str(walk[1])), (str(walk[1]), str(walk[2])), (str(walk[2]), str(walk[3]))])
@@ -225,11 +223,10 @@ def plot_explain(relevances, src, tar, walks, pos, gamma):
 
     axs.legend(loc=2, bbox_to_anchor=(-0.15, 1.14))
     axs.axis("off")
-    print(sum_s, sum_t, sum_c)
     gamma = str(gamma)
     gamma = gamma.replace('.', '')
     node = str(src)
-    name = "LRP_plot_" + pos + "_example_" + node + gamma + "0.svg"
+    name = "LRP_plot_" + pos + "_example_" + node +"withoutw_link"+ ".svg"
     plt.tight_layout()
     fig.savefig(name)
     fig.show()
@@ -238,7 +235,6 @@ def plot_explain(relevances, src, tar, walks, pos, gamma):
 
 def validation(relevances: list, node):
     relevances = np.asarray(relevances)
-    print(relevances)
     fig, axs = plt.subplots()
     axs.fill_between(np.arange(0, 25, 1), relevances[:, 1])
     axs.set_xticks([0, 5, 10, 15, 20, 25], labels=[0, 5, 10, 15, 20, 25])
@@ -259,9 +255,7 @@ def tsne_plot():
         verbose=True,
     )
     data_x = data.x[0:data.x.shape[0] // 2]
-    print(data_x.shape, data.x.shape)
     embedding_train = tsne.fit(data_x)
-    print(embedding_train, embedding_train.shape)
 
     tsne = TSNE(n_components=2, verbose=1, random_state=123)
     z = tsne.fit_transform(data.x)
@@ -335,7 +329,6 @@ def plt_node_lrp(rel, src, tar,walks):
     plt.show()
 
 def reindex(nodes, edgeindex,src,tar):
-    print("edges",edgeindex)
     new = torch.arange(0,len(nodes))
     tmp = torch.vstack((torch.asarray(nodes),new)).T
     for i in range(tmp.shape[0]):
@@ -364,8 +357,6 @@ def plt_gnnexp(rel, src, tar, walks, mapping):
                          (str(walk[1]), str(walk[2])),
                          (str(walk[2]), str(walk[3]))])
 
-
-
     place = np.array(list(graph.layout_kamada_kawai()))
     fig, axs = plt.subplots()
 
@@ -391,8 +382,13 @@ def plt_gnnexp(rel, src, tar, walks, mapping):
              color='yellowgreen', ms=5, label="source node")
     axs.plot(place[nodes.index(mapping[tar]), 0], place[nodes.index(mapping[tar]), 1], 'o',
              color='gold', ms=5, label="target node")
-    # nodes plotting
-    # TODO Src & target
+
+    # legend shenenigans & # plot specifics
+    axs.plot([], [], color='slateblue', label="negative relevance")
+    axs.plot([], [], color='indianred', label="positive relevance")
+
+    axs.legend(loc=2, bbox_to_anchor=(-0.15, 1.14))
+    axs.axis("off")
 
     plt.savefig("plots/gnn_exp_.jpeg")
     plt.show()
@@ -402,7 +398,6 @@ def plot_cam(rel, src, tar,walks,mapping):
     rel = rel.detach().numpy()
     nodes = list(set(walks.flatten()))
     graph = igraph.Graph()
-    print(nodes)
     for node in nodes:
         graph.add_vertices(str(node))
 
@@ -448,6 +443,13 @@ def plot_cam(rel, src, tar,walks,mapping):
              color='yellowgreen', ms=5, label="source node")
     axs.plot(place[nodes.index(mapping[tar]), 0], place[nodes.index(mapping[tar]), 1], 'o',
              color='gold', ms=5, label="target node")
+
+    # legend shenenigans & # plot specifics
+    axs.plot([], [], color='slateblue', label="negative relevance")
+    axs.plot([], [], color='indianred', label="positive relevance")
+
+    axs.legend(loc=2, bbox_to_anchor=(-0.15, 1.14))
+    axs.axis("off")
 
     plt.savefig("plots/cam.jpeg")
     plt.show()

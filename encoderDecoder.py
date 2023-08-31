@@ -8,6 +8,8 @@ from torch_geometric.nn import GCNConv
 import torch_geometric
 import scipy.sparse as ssp
 import pandas as pd
+
+import XAI
 import dataLoader
 from utils import validation, utils_func, utils
 from plots import plots
@@ -277,64 +279,6 @@ def train(batchsize, train_set, x, adj, optimizer, gnn, nn):
     return sum(total_loss) / num_sample
 
 
-def explains(test_set, gnn, mlp, adj, x, edge_index,walks, validation_plot=False, prunning=True, masking=False,
-             similarity=False,
-             plot=True, relevances=False):
-    src, tar = test_set["source_node"], test_set["target_node"]
-    # forward passes
-    mid = gnn(x, edge_index)  # features, edgeindex
-    pos_pred = mlp(mid[src], mid[tar])
-
-    samples = [5]  #47 , 53, 5, 188, 105]
-    random = False
-    val_mul = []
-    score = 0
-    e = 0.0
-    gammas = [0.0]  # [0.0, 0.02,0.0,0.02]
-    gamma = 0.02
-    z = copy.deepcopy(x)
-
-    for gamma in gammas:
-        if validation_plot: val = []
-        for i in samples:
-
-            p = []
-            walks = utils_func.walks(adj, src[i], tar[i])
-
-            r_src, r_tar = mlp.lrp(mid[src[i]], mid[tar[i]], pos_pred[i], gamma=gamma, epsilon=e)
-            node_exp = gnn.lrp_node(x, edge_index, r_src, r_tar, tar[i], gamma=gamma, epsilon=e)
-
-            if relevances: plots.layers_sum(walks, gnn, r_src, r_tar, tar[i], x, edge_index, pos_pred[i])
-            for walk in walks:
-                if prunning:
-                    p.append(gnn.lrp(x, edge_index, walk, r_src, r_tar, tar[i], gamma=gamma, epsilon=e)[-1])
-
-                if masking:
-                    utils_func.masking(gnn, mlp, z, src[i], tar[i], edge_index, adj, walk, gamma=gamma)
-            if validation_plot:
-                if random:
-                    p = validation.validation_random(walks, (r_src.detach().sum() + r_tar.detach().sum()))
-                val.append(validation.validation_results(gnn, mlp, x, edge_index, walks, p, src[i], tar[i],
-                                                         pruning=True, activaton=False))
-            if similarity: score += utils_func.similarity(walks, p, x, tar[i], "max")
-
-            if plot:
-                walks.append([src[i].numpy(), src[i].numpy(), src[i].numpy(), tar[i].numpy()])
-                plots.plot_explain(p, src[i], tar[i], walks, "pos", gamma)
-                #plots.plt_node_lrp(node_exp,  src[i], tar[i], walks)
-
-        if gamma == 0.02: e = 0.2
-
-        if validation_plot and average:
-            val_mul.append(validation.validation_avg_plot(val, 57))
-    if validation_plot and average:
-        validation.validation_multiplot(val_mul[0], val_mul[1], val_mul[2], val_mul[3])
-        validation.sumUnderCurve(val_mul[0], val_mul[2], val_mul[1], val_mul[3])
-    if similarity:
-        score /= len(samples)
-        print("similarity score is:", score)
-
-
 @torch.no_grad()
 def test(batchsize, data_set, x, adj, evaluator, gnn, nn, accuracy=False):
     tmp = data_set["source_node"].shape[0]
@@ -343,9 +287,10 @@ def test(batchsize, data_set, x, adj, evaluator, gnn, nn, accuracy=False):
 
     pos_preds, neg_preds = [], []
     #graph_rep = gnn(x, adj)
-    graph_rep = gnn.forward(x, adj, masks=None)
+    graph_rep = gnn.forward(x, adj)
     for i in range(0, src.shape[0], batchsize):
         idx = permutation[i:i + batchsize]
+
         src_tmp = src[idx]
         tar_tmp = tar[idx]
         tar_neg_tmp = tar_neg[idx]
@@ -358,7 +303,6 @@ def test(batchsize, data_set, x, adj, evaluator, gnn, nn, accuracy=False):
         tar_neg_tmp = tar_neg_tmp.view(-1)
         neg_preds += [torch.sigmoid(nn(graph_rep[src_tmp], graph_rep[tar_neg_tmp]).squeeze().cpu())]
 
-    print(len(neg_preds),"\n",len(pos_preds))
     pos_pred = torch.cat(pos_preds, dim=0)
     neg_pred = torch.cat(neg_preds, dim=0)
 
@@ -382,7 +326,6 @@ def main(batchsize=None, epochs=1, explain=True, save=False, train_model=False, 
     data = dataset.load()
     split = dataset.get_edge_split()
     train_set, valid_set, test_set = split["train"], split["valid"], split["test"]
-
     tmp = data.adj_t.set_diag()
     deg = tmp.sum(dim=0).pow(-0.5)
     deg[deg == float('inf')] = 0
@@ -418,8 +361,6 @@ def main(batchsize=None, epochs=1, explain=True, save=False, train_model=False, 
                 loss[i] = train(batchsize, train_set, data.x, data.adj_t, optimizer, gnn, nn).detach()
             #valid_mrr[i] = test(batchsize, valid_set, data.x, data.adj_t, evaluator, gnn, nn)
             #test_mrr[i] = test(batchsize, test_set, data.x, data.adj_t, evaluator, gnn, nn)
-            #valid_mrr[i] = test(batchsize, valid_set, data.x, data.adj_t, evaluator, t_GCN, nn)
-            #test_mrr[i] = test(batchsize, test_set, data.x, data.adj_t, evaluator, t_GCN, nn)
 
             if valid_mrr[i] > best and save:
                 best = valid_mrr[i]
@@ -436,36 +377,9 @@ def main(batchsize=None, epochs=1, explain=True, save=False, train_model=False, 
                                       file_name="GNN" + "performance")
                 if explain:
 
-                    # This generates a subgraph
-                    # passable size for entries 47,188,105, 8, 10
-                    src, tar = int(valid_set["source_node"][5]), int(valid_set["target_node"][5])
-                    adj = data.adj_t.to_dense()
-                    adj[tar,src]= 1
-                    subgraph = utils_func.get_subgraph(torch_sparse.SparseTensor.from_dense(exp_adj), src, tar, 3)
+                    XAI.get_explanations(data,explain_data,exp_adj,valid_set,t_GCN, gnn, nn,)
 
-                    # to do add the predicted edge back in
-                    x_new, subgraph, edge, mapping = utils_func.reindex(subgraph, data.x, (src, tar))
-                    tmp = torch_geometric.utils.to_dense_adj(subgraph).squeeze()
-                    subgraph = torch_geometric.utils.to_dense_adj(
-                        subgraph).squeeze()
-                    #print(subgraph[44,116], subgraph[116,44])
-                    #print(torch_sparse.SparseTensor.from_dense(subgraph))
 
-                    explains(valid_set, gnn, nn, exp_adj, explain_data.x, data.adj_t, False)
-                    walks = utils_func.walks(subgraph,edge[0],edge[1])
-                    nodes = list(set([x[-1] for x in walks]))
-                    mask = torch.zeros(subgraph.shape)
-                    for i in nodes:
-                        mask[i,i] = 1
-                    walks = utils_func.map_walks(walks, mapping)
-                    print(type(walks[0][0]))
-                    z = gnnexplainer(subgraph.T, t_GCN, nn, edge, x_new,mask)
-                    plots.plt_gnnexp(z,edge[0],edge[1], walks,mapping)
-
-                    z = CAM(subgraph.T,gnn,x_new)
-                    #z = get_top_edges_edge_ig(gnn,nn,x_new,subgraph,edge)
-                    #print(torch_sparse.SparseTensor.from_dense(z))
-                    plots.plot_cam(z,edge[0],edge[1],walks,mapping)
 
         average[run, 0] = valid_mrr[-1]
         average[run, 1] = test_mrr[-1]
