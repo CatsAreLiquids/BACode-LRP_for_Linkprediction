@@ -6,7 +6,7 @@ import itertools
 from functools import reduce
 import torch_sparse
 from operator import itemgetter
-from typing import List, Literal
+from typing import List, Literal, Union
 
 
 def adjMatrix(edges, numNodes, selfLoops=True):
@@ -80,15 +80,21 @@ def walks(A, src, tar, max_len = 4):
     else:
         return refactored_walks(A, src, tar, max_len)
 
-def refactored_walks(A : torch_sparse.SparseTensor, src : int, tar : int, max_len = 4) -> List[List[int]]:
+def refactored_walks(A : torch_sparse.SparseTensor, src : Union[int, torch.Tensor], tar : Union[int, torch.Tensor], max_len = 4) -> List[List[int]]:
+    if type(src) is int: src = torch.tensor(src)
+    if type(tar) is int: tar = torch.tensor(tar)
     walks_src = [[src.item()]]
     walks_tar = [[tar.item()]]
     for _ in range(max_len - 1):
-        walks_src = reduce(lambda x,y: x+y, [_get_next_step_in_walk(A, walk) for walk in walks_src])
-        walks_tar = reduce(lambda x,y: x+y, [_get_next_step_in_walk(A, walk) for walk in walks_tar])
+        walks_src = reduce(lambda x,y: x+y, [_get_next_step_in_walk(A, walk, 'backward') for walk in walks_src])
+        walks_tar = reduce(lambda x,y: x+y, [_get_next_step_in_walk(A, walk, 'backward') for walk in walks_tar])
     
     out = [walk for walk in walks_src + walks_tar if len(walk) == max_len]
     return sorted(out, key=itemgetter(*range(max_len)))
+
+def get_neighbours(A : torch_sparse.SparseTensor, node : Union[int, torch.Tensor], direction : Literal['forward', 'backward'] = 'forward') -> List[torch.Tensor]:
+    walks_to_node = [walk[0] for walk in _get_next_step_in_walk(A, [node], direction)]
+    return sorted(walks_to_node)
 
 def _get_next_step_in_walk(A : torch_sparse.SparseTensor, walk : List[int], direction : Literal['forward', 'backward'] = 'backward') -> List[List[int]]:
     prev_node, next_node = A.storage.col(), A.storage.row()

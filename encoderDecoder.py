@@ -1,3 +1,4 @@
+#%%
 import copy
 import numpy as np
 import torch.nn
@@ -22,13 +23,20 @@ class GCNLayer(torch.nn.Module):
         super().__init__()
         self.layer = torch.nn.Linear(c_in, c_out,bias=False)
 
-    def forward(self, x, adj, mask):
+    def old_forward(self, x, adj, mask):
         if mask is not None:
             adj  = adj*mask+torch.eye(adj.shape[0])
         adj = adj.to_dense()
         return torch.spmm(adj, self.layer(x))
 
-
+    def forward(self, x : torch.Tensor, adj : torch_sparse.SparseTensor, mask) -> torch.Tensor:
+        return torch_sparse.spmm(torch.stack(adj.coo()[:2]), adj.storage.value(), *adj.sparse_sizes(), self.layer(x))
+    
+    def precise_forward(self, x : torch.Tensor, adj : torch_sparse.SparseTensor, mask) -> torch.Tensor:
+        if mask is not None:
+            adj  = adj*mask+torch.eye(adj.shape[0])
+        return torch.spmm(adj.to(torch.float64).to_dense(), self.layer(x))
+    
 class testGCN():
     def __init__(self, gnn):
         super().__init__()
@@ -54,13 +62,21 @@ class GNN(torch.nn.Module):
     3-layer GNN with 128 input- and 256 output- and hidden neurons
     """
 
-    def __init__(self):
+    def old__init__(self):
         # build GNN here
         super(GNN, self).__init__()
         #super().__init__()
         self.input = GCNConv(128, 256, bias=False)
         self.hidden = GCNConv(256, 256, bias=False)
         self.output = GCNConv(256, 256, bias=False)
+
+    def __init__(self):
+        # build GNN here
+        super(GNN, self).__init__()
+        #super().__init__()
+        self.input = GCNConv(128, 256, add_self_loops= False, normalize= False, bias=False)
+        self.hidden = GCNConv(256, 256, add_self_loops= False, normalize= False, bias=False)
+        self.output = GCNConv(256, 256, add_self_loops= False, normalize= False, bias=False)
 
     def forward(self, x, edge_index, mask=None, deg=None):
         if mask is not None:
@@ -124,6 +140,104 @@ class GNN(torch.nn.Module):
         R[0] = A[0].data * c
         # print(R[0].shape)
         return R[0].sum(dim=1).detach().numpy()
+
+    def roh(self, layer : GCNConv, gamma : Union[float, torch.Tensor]):
+            with torch.no_grad():
+                cp = copy.deepcopy(layer)
+                cp.lin.weight[:, :] = cp.lin.weight + (gamma * torch.clamp(cp.lin.weight, min=0))
+                return cp
+            
+    def refactored_lrp_step(self, h : torch.Tensor, edge_index : torch_sparse.SparseTensor, layer : GCNConv, node_relevance, node, epsilon= 0., gamma= 0., lrp_locals= None):
+        
+        simplified_ei = get_single_node_adjacency(edge_index, node, 'forward')
+        assert ((edge_index @ h)[node] == (simplified_ei @ h)[node]).all()
+        assert (layer(h, edge_index)[node] == layer(h, simplified_ei)[node]).all()
+        assert (self.roh(layer, gamma)(h, edge_index)[node] == self.roh(layer, gamma)(h, simplified_ei)[node]).all()
+        assert (epsilon + self.roh(layer, gamma)(h, edge_index)[node] == epsilon + self.roh(layer, gamma)(h, simplified_ei)[node]).all()
+        z = epsilon + self.roh(layer, gamma).forward(h, get_single_node_adjacency(edge_index, node))
+        z = z[node]
+        s = node_relevance / (z + 1e-15)
+        c = torch.autograd.grad((z * s.data).sum(), h)[0]
+        out_grad = h*c
+        z = epsilon + self.roh(layer, gamma).forward(h, get_single_node_adjacency(edge_index, node))
+        z = z[node]
+        s = node_relevance / (z + 1e-15)
+        (z * s.data).sum().backward()
+        c = h.grad
+        out_backward = h*c
+        assert (out_grad == out_backward).all(), "Gradient yields different results"
+        return out_grad
+    
+    def refactored_lrp_loop(self, x, edge_index, walk, r_src, r_tar, tar, epsilon= 0., gamma= 0., lrp_locals = None):
+
+        A = [None] * 3
+        R = [None] * 4
+
+        x.requires_grad_(True)
+
+        A[0] = x.data.clone().requires_grad_(True)
+        A[1] = relu(self.input(A[0], edge_index)).data.clone().requires_grad_(True)
+        A[2] = relu(self.hidden(A[1], edge_index)).data.clone().requires_grad_(True)
+
+        if walk[-1] == tar:
+            R[-1] = r_tar
+        else:
+            R[-1] = r_src
+
+        R[2] = self.refactored_lrp_step(A[2], edge_index, self.output, R[3], walk[3], epsilon, gamma, lrp_locals)[walk[2]]
+        R[1] = self.refactored_lrp_step(A[1], edge_index, self.hidden, R[2], walk[2], epsilon, gamma, lrp_locals)[walk[1]]
+        R[0] = self.refactored_lrp_step(A[0], edge_index, self.input, R[1], walk[1], epsilon, gamma, lrp_locals)[walk[0]]
+
+        return R[3].sum().detach().numpy(), R[2].sum().detach().numpy(), R[1].sum().detach().numpy(), R[
+            0].sum().detach().numpy()
+
+    def lrp_return_locals(self, x, edge_index, walk, r_src, r_tar, tar, epsilon=0, gamma=0):
+
+        def roh(layer):
+            with torch.no_grad():
+                cp = copy.deepcopy(layer)
+                cp.lin.weight[:, :] = cp.lin.weight + (gamma * torch.clamp(cp.lin.weight, min=0))
+                return cp
+
+        A = [None] * 3
+        R = [None] * 4
+
+        x.requires_grad_(True)
+
+        A[0] = x.data.clone().requires_grad_(True)
+        A[1] = relu(self.input(A[0], edge_index)).data.clone().requires_grad_(True)
+        A[2] = relu(self.hidden(A[1], edge_index)).data.clone().requires_grad_(True)
+
+        if walk[-1] == tar:
+            R[-1] = r_tar
+        else:
+            R[-1] = r_src
+
+        z = epsilon + roh(self.output).forward(A[2], edge_index)
+        z = z[walk[3]]
+        s = R[3] / (z + 1e-15)
+        (z * s.data).sum().backward()
+        c = A[2].grad
+        R[2] = A[2].data * c
+        R[2] = R[2][walk[2]]
+
+        z = epsilon + roh(self.hidden).forward(A[1], edge_index)
+        z = z[walk[2]]
+        s = R[2] / (z + 1e-15)
+        (z * s.data).sum().backward()
+        c = A[1].grad
+        R[1] = A[1].data * c
+        R[1] = R[1][walk[1]]
+
+        z = epsilon + roh(self.input).forward(A[0], edge_index)
+        z = z[walk[1]]
+        s = R[1] / (z + 1e-15)
+        (z * s.data).sum().backward()
+        c = A[0].grad
+        R[0] = A[0].data * c
+        R[0] = R[0][walk[0]]
+
+        return copy.deepcopy({k : [_v.detach().sum().numpy() for _v in v] for k,v in locals().items() if k in ['R', 'A']})
 
     def lrp(self, x, edge_index, walk, r_src, r_tar, tar, epsilon=0, gamma=0):
 
@@ -358,14 +472,16 @@ def explains(test_set, gnn, mlp, adj, x, edge_index,walks, validation_plot=False
 def refactored_explains(test_set, gnn, mlp, adj, x, edge_index,
              similarity=False,
              plot=True, relevances=False,
-             remove_connections= False):
+             remove_connections= False,
+             **kwargs,
+             ):
 
     src, tar = test_set["source_node"], test_set["target_node"]
     # forward passes
     mid = gnn(x, edge_index)  # features, edgeindex
     pos_pred = mlp(mid[src], mid[tar])
 
-    samples = find_good_samples(edge_index, test_set, criterion= "indirect connections", load = "", save =  False)
+    samples = find_good_samples(edge_index, test_set, criterion= "indirect connections", load = "walks with indirect connections.pkl", save =  False)
     # samples = [5]#, 47 , 53, 5, 188, 105]
     # new_samples = 94
 
@@ -391,8 +507,13 @@ def refactored_explains(test_set, gnn, mlp, adj, x, edge_index,
                 if remove_connections:
                     indexes = find_index_of_connection(edge_index, src[i], tar[i])
                     _tmp = remove_connection_at_index(tmp, indexes)
-                else: _tmp = tmp                        
-                p.append(gnn.lrp(x, _tmp, walk, r_src, r_tar, tar[i], gamma=gamma, epsilon=e)[-1])
+                else: _tmp = tmp
+                _rel = gnn.refactored_lrp_loop(x, _tmp, walk, r_src, r_tar, tar[i], gamma=gamma, epsilon=e)
+                p.append(_rel[-1])
+                if _rel != gnn.lrp(x, _tmp, walk, r_src, r_tar, tar[i], gamma=gamma, epsilon=e):
+                    lrp_locals= gnn.lrp_return_locals(x, _tmp, walk, r_src, r_tar, tar[i], gamma=gamma, epsilon=e)
+                    gnn.refactored_lrp_loop(x, _tmp, walk, r_src, r_tar, tar[i], gamma=gamma, epsilon=e, lrp_locals= lrp_locals)
+
 
             if similarity: score += utils_func.similarity(walks, p, x, tar[i], "max")
 
@@ -466,6 +587,28 @@ def find_index_of_connection(sparse_tensor : torch_sparse.SparseTensor, src : in
         ).all() #  Checks that the indexes to be removed actually correspond to src and target
     
     return remove_indexes
+
+def _find_index_of_neighbours(sparse_tensor : torch_sparse.SparseTensor, node : Union[int, torch.Tensor], direction : Literal['forward', 'backward'] = 'backward') -> torch.Tensor:
+    prev_node, next_node = sparse_tensor.storage.row(), sparse_tensor.storage.col()
+
+    if direction == "forward":    
+        return torch.where(prev_node == node)[0]
+    elif direction == "backward":
+        return torch.where(next_node == node)[0]
+    else:
+        raise ValueError("Direction not recognized")
+
+def get_single_node_adjacency(sparse_tensor : torch_sparse.SparseTensor, node : Union[int, torch.Tensor], direction : Literal['forward', 'backward'] = 'backward') -> torch_sparse.SparseTensor:
+    rows, cols, val = sparse_tensor.coo()
+
+    if direction == "forward":    
+         idx = _find_index_of_neighbours(sparse_tensor, node, 'forward')
+    elif direction == "backward":
+        idx = _find_index_of_neighbours(sparse_tensor, node, 'backward')
+    else:
+        raise ValueError("Direction not recognized")
+    
+    return torch_sparse.SparseTensor(row= rows[idx], col= cols[idx], value= val[idx], sparse_sizes=sparse_tensor.storage.sparse_sizes())
 
 def remove_connection_at_index(sparse_tensor : torch_sparse.SparseTensor, indexes : list) -> torch_sparse.SparseTensor:
     """
@@ -624,7 +767,52 @@ def main(batchsize=None, epochs=1, explain=True, save=False, train_model=False, 
     print("Validation avarage Performance:", average[:, 0].mean(), "Validation variance:",
           ((average[:, 0] - average[:, 0].mean()) ** 2 / runs).sum())
 
+# from importlib import reload
+# reload(utils_func)
+# batchsize=None; epochs=1; explain=True; save=False; train_model=False; load=True; runs=1; plot=False
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# np.random.default_rng()
 
+# # loading the data
+# dataset = dataLoader.LinkPredData("data/", "mini_graph", use_subset=True)
+# # dataset = dataLoader.ToyData("data/", "mini_graph", use_subset=True)
+
+# data = dataset.load()
+# split = dataset.get_edge_split()
+# train_set, valid_set, test_set = split["train"], split["valid"], split["test"]
+
+# tmp = data.adj_t.set_diag()
+# deg = tmp.sum(dim=0).pow(-0.5)
+# deg[deg == float('inf')] = 0
+# tmp = deg.view(-1, 1) * tmp * deg.view(1, -1)
+# data.adj_t = tmp
+
+# # initilaization models
+# gnn, nn = GNN(), NN()
+# if load:
+#     gnn.load_state_dict(torch.load("models/gnn_2100_50_0015"))
+#     nn.load_state_dict(torch.load("models/nn_2100_50_0015"))
+# gnn.to(device), nn.to(device), data.to(device)
+# t_GCN = testGCN(gnn)
+# optimizer = torch.optim.Adam(list(gnn.parameters()) + list(nn.parameters()), lr=0.0005)
+# evaluator = Evaluator(name='ogbl-citation2')
+
+# # adjusting batchsize for full Dataset
+# if batchsize is None:
+#     batchsize = dataset.num_edges
+# if explain:
+#     # to plot proper plot the the LRP-method we need all walks:
+#     explain_data = dataset.load(transform=False, explain=False)
+#     exp_adj = utils_func.adjMatrix(explain_data.edge_index,
+#                                     explain_data.num_nodes)  # Transpose of adj Matrix for find walks
+
+# # ----------------------- training & testing
+# average = np.zeros((runs, 2))
+# #%%
+# reload(utils_func)
+# get_single_node_adjacency(tmp, 0, 'backward')
+
+#%%
 if __name__ == "__main__":
     # main(None, 100, True, False, True, False, 1, False)
     main()

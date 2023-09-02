@@ -1,9 +1,11 @@
+#%%
+import torch_sparse
 import unittest
 from encoderDecoder import NN, GNN, testGCN
 import torch
 import dataLoader
 from utils import utils_func
-from encoderDecoder import explains
+from encoderDecoder import refactored_explains, get_single_node_adjacency
 
 class test_lrp(unittest.TestCase):
 
@@ -22,18 +24,32 @@ class test_lrp(unittest.TestCase):
         self.t_GCN = testGCN(self.gnn)
         print('setup done')
 
-    def test_explains(self):
-        explain_data = self.dataset.load(transform=False, explain=False)
-        exp_adj = utils_func.adjMatrix(explain_data.edge_index,
-                                       explain_data.num_nodes)  # Transpose of adj Matrix for find walks
-        test_set = self.valid_set; gnn = self.gnn; mlp = self.nn; adj = exp_adj
-        x = explain_data.x; edge_index = self.data.adj_t; validation_plot = False
+    # def test_explains(self):
+    #     explain_data = self.dataset.load(transform=False, explain=False)
+    #     exp_adj = utils_func.adjMatrix(explain_data.edge_index,
+    #                                    explain_data.num_nodes)  # Transpose of adj Matrix for find walks
+    #     test_set = self.valid_set; gnn = self.gnn; mlp = self.nn; adj = exp_adj
+    #     x = explain_data.x; edge_index = self.data.adj_t; validation_plot = False
 
-        result = explains(test_set, gnn, mlp, adj, x, edge_index, validation_plot)
-        print(result)
+    #     result = refactored_explains(test_set, gnn, mlp, adj, x, edge_index, validation_plot)
+    
+    def test_get_single_node_adjacency(self):
+        onehot = lambda x,y : torch.tensor([0 if i != x else 1 for i in range(y)])
+        top = 5
+        features = torch.stack([onehot(x, top) for x in range(top)])
+        adj = torch.tensor([
+            [1,1,0,0,0],
+            [0,1,1,0,0],
+            [0,0,1,1,0],
+            [0,0,0,1,1],
+            [1,0,0,0,1],
+        ])
+        adj_sparse = torch_sparse.SparseTensor.from_dense(adj)
+        for i in range(top):
+            assert ((adj@features)[i] == (get_single_node_adjacency(adj_sparse, i)@features)[i]).all()
 
     def tearDown(self) -> None:
         print('teardown')
-
+#%%
 if __name__ == '__main__':
     unittest.main()
