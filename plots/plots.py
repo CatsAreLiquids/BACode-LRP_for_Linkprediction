@@ -12,6 +12,7 @@ from typing import Dict, List
 import torch_sparse
 from matplotlib import patches, lines
 import os
+import glob
 
 def node_plt(walks, gnn, r_src, r_tar, tar, x, edge_index, pred):
     pass
@@ -304,7 +305,7 @@ def get_alpha(x, r_max, r_min = 0, new_max = 1, new_min = 0.1):
     alpha = new_min + ((new_max - new_min)/(r_max - r_min))*(x - r_min)
     if 100*x/r_max < 0.01: # if the relevance is smaller than 0.01% of the max relevance for the subgraph, set it to zero.
         alpha = 0
-    return alpha
+    return np.clip(alpha, new_min, new_max) # is necessary to avoid floating points errors that may go outside of the acceptable range
 
 def plot_graph(graph, visual_style, walks, rel, ax, gamma, epsilon, noise = True, layout_dict : Dict[str, object] = None):
     if layout_dict is None:
@@ -312,12 +313,15 @@ def plot_graph(graph, visual_style, walks, rel, ax, gamma, epsilon, noise = True
             'layout' : "kk",
         }
     max_abs = np.abs(rel).max()
-    igraph.plot(graph, **visual_style, target= ax)
+    layout = graph.layout(**layout_dict)
     for walk, r in zip(walks[:-1], rel):
         if r == 0: continue
-        points = get_walk_points(graph.layout(**layout_dict), graph.vs["name"], [str(node) for node in walk])
+        points = get_walk_points(layout, graph.vs["name"], [str(node) for node in walk])
         alpha = get_alpha(np.abs(r), max_abs, new_min = 0.1)
         plot_walk_trace(points, ax, r, alpha, noise= noise)
+    igraph.plot(graph, **visual_style, layout= layout, target= ax)
+    src_tar_ind = np.array(graph.vs["is_src"]) ^ np.array(graph.vs["is_tar"])
+    ax.scatter(np.array(layout)[src_tar_ind][:, 0], np.array(layout)[src_tar_ind][:, 1], color= np.array(graph.vs["color"])[src_tar_ind].tolist(), sizes= 10*np.array(graph.vs["size"])[src_tar_ind])
 
 def plot_graph_sum(graph, visual_style, walks, rel, ax, gamma, epsilon):
     max_abs = np.abs(rel).max()
@@ -347,6 +351,111 @@ def save_plots(
     plot_graph(graph, visual_style, walks, explanation, ax, gamma, epsilon)
     os.makedirs("all_plots/", exist_ok= True)
     fig.savefig(f"all_plots/{src.item()}_{tar.item()}_{str(gamma).replace('.', ',')}_{str(epsilon).replace('.', ',')}.pdf")
+
+def simple_plot(
+        adjacency_matrix : torch_sparse.SparseTensor,
+        explanation : List[np.ndarray],
+        src : torch.Tensor,
+        tar : torch.Tensor,
+        walks : List[List[int]],
+        gamma : float = 0.0,
+        epsilon : float = 0.0,
+        ax : plt.Axes = None,
+        set_legend : bool = False,
+        legend_args : dict[str, object] = None,
+    ) -> None:
+    subgraph = np.unique(np.asarray(walks).flatten())
+    graph = get_graph(adjacency_matrix, subgraph, np.asarray(src), np.asarray(tar))
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(6,6))
+        plot_flag = True
+    else: plot_flag = False
+    graph, visual_style = customize_graph(graph, str(src.item()), str(tar.item()))
+    plot_graph(graph, visual_style, walks, explanation, ax, gamma, epsilon)
+    if plot_flag:
+        fig.tight_layout()
+        fig.show()
+    if set_legend:
+        if legend_args is None:
+            legend_args = {}
+        set_ax_legend(ax, **legend_args)
+
+def plot_from_filename(
+        full_file_path : str,
+        adjacency_matrix : torch_sparse.SparseTensor,
+        ax : plt.Axes = None,
+        set_legend : bool = False,
+        legend_kwargs : dict[str,object] = None,
+        ) -> None:
+    """
+    Takes a filename in form <path_to_file>/{src}_{tar}_{gamma}_{epsilon}.th
+    plots the walks contained in the sparse tensor
+
+    @param: full_file_path: str: The full file path.
+    @param: adjacency_matrix: SparseTensor: The adjacency matrix in torch_sparse format.
+    @param: ax: plt.Axes: The ax to plot in, if it's None a new figure will be created.
+    @param: set_legend: bool: Flag to generate a legend on this subplot.
+    @param: legend_kwargs: dict: The kwargs for the legend.
+    """
+    rel_matrix = torch.load(full_file_path)
+    filename = os.path.splitext(full_file_path)[0].split('/')[-1]
+    src, tar, gamma, epsilon = filename.split('_')
+    gamma, epsilon = [float(num.replace(',', '.')) for num in [gamma, epsilon]]
+    explanations = rel_matrix._values()
+    src, tar = torch.tensor(int(src)), torch.tensor(int(tar))
+    walks = rel_matrix._indices().T.tolist()
+    simple_plot(adjacency_matrix= adjacency_matrix, explanation=np.array(explanations), src=src, tar=tar, walks=walks,
+                 gamma= gamma, epsilon= epsilon, ax= ax, set_legend= set_legend, legend_args= legend_kwargs)
+
+
+def plot_all_walks_in_folder(path_to_folder: str, adj_t: torch_sparse.SparseTensor, save: bool = False):
+    already_plotted = []
+    all_files = glob.glob(os.path.join(path_to_folder,f"*.th"))
+    for file in all_files[1:]:
+        filename = os.path.splitext(file)[0].split('/')[-1]
+        src, tar, _, _ = filename.split('_')
+        if f"{src}, {tar}" in already_plotted or src == 'all': continue
+        else: already_plotted.append(f"{src}, {tar}")
+
+        plot_all_parameters_for_src_tar(path_to_folder, adj_t, int(src), int(tar), loc='upper left', bbox_to_anchor=(-1.35, 1), prop={'size': 6}, save=f"all_plots/{src}_{tar}.pdf" if save else "")
+
+
+def plot_all_parameters_for_src_tar(path_to_folder : str, adjacency_matrix : torch_sparse.SparseTensor, src : int, tar : int, save : str = "", **kwargs) -> None:
+    files = glob.glob(os.path.join(path_to_folder,f"{src}_{tar}_*.th"))
+    files = sorted(files, key= lambda s: [float(_s.replace(',', '.')) for _s in os.path.splitext(s)[0].split('_')[-2:]])
+    fig, axs = plt.subplots(2, len(files)//2 + len(files)%2, figsize=(kwargs.get("figsize_multiplier", 1.5) * (len(files)//2 + len(files)%2), kwargs.get("figsize_multiplier", 1.5) * 1.8))
+    axs = np.array(axs).flatten()
+    ordered_params = []
+    for i,(file, ax, letter) in enumerate(zip(files, axs, 'ABCDEFGHI')):
+        ax : plt.Axes
+        gamma, epsilon = os.path.splitext(file)[0].split('/')[-1].split('_')[-2:]
+        gamma, epsilon = [float(param.replace(',', '.')) for param in [gamma, epsilon]]
+        ordered_params.append(tuple([gamma, epsilon]))
+        plot_from_filename(file, adjacency_matrix, ax)
+        ax.text(ax.get_xlim()[0], ax.get_ylim()[1], letter)
+    if len(axs) > len(files):
+        axs[-1].axis('off')
+        correct_positioning_of_axes(axs)
+        set_ax_legend(axs[len(axs)//2 + len(axs)%1], **kwargs)
+    fig.suptitle([f"{b}: {a}" for a,b in zip(ordered_params, 'ABCDEFGHI')], fontsize= 7)
+    if save != "":
+        fig.savefig(save)
+        plt.close(fig)
+    else:
+        plt.show()
+
+
+def correct_positioning_of_axes(axs : plt.Axes):
+    half = len(axs) // 2 + len(axs) % 2
+    axs_positions = [_ax.get_position() for _ax in axs]
+    _delta = (axs_positions[0].get_points() + axs_positions[1].get_points())/2 - axs_positions[0].get_points()
+    _delta = _delta[:, 0].mean() * 1.1
+    for ax in axs[half:-1][::-1]:
+        pos = ax.get_position().bounds
+        new_bounds = list(pos)
+        new_bounds[0] += _delta
+        ax.set_position(new_bounds)
+
 
 def plot_explanations_modular(
         adjacency_matrix : torch_sparse.SparseTensor,
@@ -460,7 +569,7 @@ def refactored_plot_explain(relevances, src, tar, walks, pos, gamma, structure= 
             sum_c += np.abs(r)
 
         points = get_walk_points(place, nodes, walk)
-        alpha = np.clip((3 / max_abs) * np.abs(r), 0, 1)
+        alpha = get_alpha(r, max_abs)
         plot_walk_trace(points, ax, r, alpha)
         a = [place[nodes.index(walk[0]), 0], place[nodes.index(walk[1]), 0], place[nodes.index(walk[2]), 0],
              place[nodes.index(walk[3]), 0]]
@@ -545,7 +654,7 @@ def plot_walk_trace(points : List[List[float]], ax : plt.Axes, rel : float, alph
         points = np.asarray(points) + noise
     path = Path(points, codes)
     color = 'indianred' if np.sign(rel) > 0 else 'slateblue'
-    patch = patches.PathPatch(path, edgecolor= color, alpha= 0 if np.isnan(alpha) else alpha, facecolor='none', lw=2)
+    patch = patches.PathPatch(path, edgecolor= color, alpha= 0 if np.isnan(alpha) else alpha, facecolor='none', lw=0.7)
     ax.add_patch(patch)
 
 def validation(relevances: list, node):
