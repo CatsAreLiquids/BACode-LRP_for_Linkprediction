@@ -32,7 +32,22 @@ def find_good_samples(adj : torch_sparse.SparseTensor, subset : Dict[str, Union[
         with open(save_path, "wb") as f:
             pickle.dump(out, f)
     return out
-    
+
+
+def remove_connections_between(_adj: torch_sparse.SparseTensor, node_a: Union[torch.Tensor, int], node_b: Union[torch.Tensor, int]) -> torch_sparse.SparseTensor:
+    adj = _adj.clone()
+    if isinstance(node_a, torch.Tensor) and len(node_a) > 1:
+        for _a, _b in zip(node_a, node_b):
+            _a = _a.item() if isinstance(_a, torch.Tensor) else _a
+            _b = _b.item() if isinstance(_b, torch.Tensor) else _b
+            adj = remove_connection_at_index(adj, find_index_of_connection(adj, _a, _b))
+
+    else:
+        node_a = node_a.item() if isinstance(node_a, torch.Tensor) else node_a
+        node_b = node_b.item() if isinstance(node_b, torch.Tensor) else node_b
+        adj = remove_connection_at_index(adj, find_index_of_connection(adj, _a, _b))
+    return adj
+
 def _find_samples_with_indirect_connections(adj : torch_sparse.SparseTensor, subset : Dict[str, torch.Tensor], remove_connection : bool = True) -> Dict[int, List[List[int]]]:
     out = {}
     for i, (src, tar, neg_tar) in tqdm(enumerate(zip(*subset.values())), desc= "Alternative connections between src and tar", total= len(subset["source_node"])):
