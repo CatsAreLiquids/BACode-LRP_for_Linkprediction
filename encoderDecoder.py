@@ -373,7 +373,7 @@ def train(batchsize, train_set, x, adj, optimizer, gnn, nn):
     total_loss = []
     num_sample = 0
 
-    for i in range(0, train_set["source_node"].shape[0], batchsize):
+    for i in tqdm(range(0, train_set["source_node"].shape[0], batchsize), desc= "Batch nr: "):
         optimizer.zero_grad()
         # Set up the batch
         idx = permutation[i:i + batchsize]
@@ -493,8 +493,8 @@ def main(batchsize=None, epochs=1, explain=True, save=False, train_model=False, 
         for i in tqdm(range(epochs), desc= "Epoch: "):
             if train_model:
                 loss[i] = train(batchsize, train_set, data.x, data.adj_t, optimizer, gnn, nn).detach()
-            #valid_mrr[i] = test(batchsize, valid_set, data.x, data.adj_t, evaluator, gnn, nn)
-            #test_mrr[i] = test(batchsize, test_set, data.x, data.adj_t, evaluator, gnn, nn)
+            valid_mrr[i] = test(batchsize, valid_set, data.x, data.adj_t, evaluator, gnn, nn)
+            test_mrr[i] = test(batchsize, test_set, data.x, data.adj_t, evaluator, gnn, nn)
             # valid_mrr[i] = test(batchsize, valid_set, data.x, data.adj_t, evaluator, t_GCN, nn)
             # test_mrr[i] = test(batchsize, test_set, data.x, data.adj_t, evaluator, t_GCN, nn)
 
