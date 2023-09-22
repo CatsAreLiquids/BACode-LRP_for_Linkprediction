@@ -467,10 +467,10 @@ def main(batchsize=None, epochs=1, explain=True, save=False, train_model=False, 
     # initilaization models
     gnn, nn = GNN(), NN()
     if load:
-        gnn.load_state_dict(torch.load("models/gnn_2100_50_0015"))
-        nn.load_state_dict(torch.load("models/nn_2100_50_0015"))
-        # gnn.load_state_dict(torch.load("models/gnn_new"))
-        # nn.load_state_dict(torch.load("models/nn_new"))
+        # gnn.load_state_dict(torch.load("models/gnn_2100_50_0015"))
+        # nn.load_state_dict(torch.load("models/nn_2100_50_0015"))
+        gnn.load_state_dict(torch.load("models/gnn_bs1000_ep10_lr0.0005"))
+        nn.load_state_dict(torch.load("models/nn_bs1000_ep10_lr0.0005"))
     gnn.to(device), nn.to(device), data.to(device)
     t_GCN = testGCN(gnn)
     optimizer = torch.optim.Adam(list(gnn.parameters()) + list(nn.parameters()), lr=0.0005)
@@ -488,27 +488,56 @@ def main(batchsize=None, epochs=1, explain=True, save=False, train_model=False, 
     # ----------------------- training & testing
     average = np.zeros((runs, 2))
     for run in range(runs):
+        x = np.arange(epochs)
+        y = np.empty(epochs) 
+        y.fill(np.nan)
+        y[0] = 1e-15
+        y_loss = np.empty(epochs) 
+        y_loss.fill(np.nan)
+        y_loss[0] = 1e-15
+        plt.ion()
+        fig, axs = plt.subplots(2,1, figsize=(9,5))
+        ax: plt.Axes = axs[0]
+        ax2: plt.Axes = axs[1]
+        ax.set_title("valid_mrr")
+        ax2.set_title("loss")
+        ax.set_xlim(-1, epochs + 1)
+        ax2.set_xlim(-1, epochs + 1)
+        line1, = ax.plot(x,y)
+        line2, = ax2.plot(x, y_loss)
         valid_mrr, test_mrr, loss = torch.zeros((epochs, 1)), torch.zeros((epochs, 1)), torch.zeros((epochs, 1))
         best = 0
         for i in tqdm(range(epochs), desc= "Epoch: "):
             if train_model:
                 loss[i] = train(batchsize, train_set, data.x, data.adj_t, optimizer, gnn, nn).detach()
             valid_mrr[i] = test(batchsize, valid_set, data.x, data.adj_t, evaluator, gnn, nn)
-            test_mrr[i] = test(batchsize, test_set, data.x, data.adj_t, evaluator, gnn, nn)
+            x[i] = i
+            y[i] = valid_mrr[i]
+            y_loss[i] = loss[i]
+            line1.set_data(x, y)
+            line2.set_data(x, y_loss)
+            fig.canvas.draw()
+            fig.canvas.flush_events()
+            ax.set_ylim(np.nanmin(y) - 0.1, np.nanmax(y) * 1.2)
+            ax2.set_ylim(np.nanmin(y_loss) * 0.8, np.nanmax(y_loss) * 1.2)
+            plt.pause(0.05)
+            # test_mrr[i] = test(batchsize, test_set, data.x, data.adj_t, evaluator, gnn, nn)
             # valid_mrr[i] = test(batchsize, valid_set, data.x, data.adj_t, evaluator, t_GCN, nn)
             # test_mrr[i] = test(batchsize, test_set, data.x, data.adj_t, evaluator, t_GCN, nn)
 
-            if valid_mrr[i] > best and save:
+            if valid_mrr[i] >= best and save:
                 best = valid_mrr[i]
                 tmp_gnn = copy.deepcopy(gnn.state_dict())
                 tmp_nn = copy.deepcopy(nn.state_dict())
+                torch.save(tmp_gnn, "models/gnn_bs1000_ep10_lr0.0005")
+                torch.save(tmp_nn, "models/nn_bs1000_ep10_lr0.0005")
 
             if i == epochs - 1:
                 if save:
-                    torch.save(tmp_gnn, "models/gnn_None_50_001_new")
-                    torch.save(tmp_nn, "models/nn_None_50_001_new")
-                    # torch.save(tmp_gnn, "models/gnn_new")
-                    # torch.save(tmp_nn, "models/nn_new")
+                    # torch.save(tmp_gnn, "models/gnn_None_50_001_new")
+                    # torch.save(tmp_nn, "models/nn_None_50_001_new")
+                    torch.save(tmp_gnn, "models/gnn_bs1000_ep10lr0.0005")
+                    torch.save(tmp_nn, "models/nn_bs1000_ep10_lr0.0005")
                 if plot:
                     plots.plot_curves(epochs, [valid_mrr, test_mrr, loss],
                                       ["Valid MRR", "Test MRR", "Trainings Error"], 'Model Error',
@@ -534,12 +563,12 @@ def main(batchsize=None, epochs=1, explain=True, save=False, train_model=False, 
 if __name__ == "__main__":
     # main(None, 100, True, False, True, False, 1, False)
     main(
-        batchsize=10,
-        epochs= 100,
+        batchsize=1000,
+        epochs= 40,
         explain= False,
-        save= False,
+        save= True,
         train_model= True,
-        load= False,
+        load= True,
         runs= 1,
         plot= False,
     )
